@@ -1,0 +1,65 @@
+{
+  "venues": [
+    {
+      "venueName": "DEXIT GLOBAL LIMITED-MUMBAI ANDHERI",
+      "aliases": [
+        "DEXIT Global Limited Mumbai Andheri",
+        "DEXIT Global Limited Formerly NSEIT Limited Trade Globe",
+        "NSEIT Limited Andheri",
+        "DEXIT Global Limited Andheri Kurla Road",
+        "DEXIT Global Limited J.B. Nagar Mumbai"
+      ],
+      "dmsCodes": [
+        "WST-MH-2684"
+      ],
+      "addressContains": [
+        "TRADE GLOBE",
+        "ANDHERI KURLA ROAD",
+        "J B NAGAR",
+        "400059"
+      ],
+      "status": "Researched",
+      "confidence": "High",
+      "marketPosition": "Strategic owned digital exam/test-center location in Andheri East, Mumbai",
+      "summary": "The venue is publicly listed as a DEXIT Global Limited test center at Trade Globe, Ground Floor, Andheri-Kurla Road, Andheri East, Mumbai 400059. Market fit is strong for high-stakes digital examination operations because DEXIT positions itself as a large owned test-center network operator with 237+ owned centers across 230+ cities, ISO-backed infrastructure practices, central vigilance, CCTV, candidate support, and digital exam delivery capability. Andheri East/J.B. Nagar is a commercial transit corridor, which is useful for candidate reach and client visibility, but operational planning should account for peak-hour traffic on Andheri-Kurla Road and clear candidate entry/queue management at the ground-floor Trade Globe site.",
+      "opportunities": [
+        "Public center listing confirms the exact Trade Globe / J.B. Nagar venue identity and support contact, making it suitable for venue verification workflows.",
+        "DEXIT's owned-center network and exam operations positioning support stronger client confidence than an unverified third-party venue.",
+        "Andheri East is a major commercial and transit zone, useful for candidate accessibility across Mumbai and nearby suburbs."
+      ],
+      "risks": [
+        "Andheri-Kurla Road and J.B. Nagar can face heavy business-hour congestion, so reporting time and crowd dispersal should be planned conservatively.",
+        "Public sources show both Trade Globe test-center address and Skyline Icon registered/head-office address for the same company, so operational teams should verify the exact exam entrance before each drive.",
+        "Market research confirms institutional presence, but final scheduling should still depend on current infrastructure audit, CCTV readiness, PWD access, UPS/genset status, and seating capacity."
+      ],
+      "sources": [
+        {
+          "label": "Insurance Institute of India - Center Info",
+          "url": "https://www.insuranceinstituteofindia.com/o/AgentExam/pg/agentExamOnlineCenterInfo?id=133",
+          "note": "Confirms DEXIT Global Limited / formerly NSEIT Limited center at Trade Globe, Andheri-Kurla Road, J.B. Nagar, Mumbai 400059."
+        },
+        {
+          "label": "DEXIT Global - Official Locations",
+          "url": "https://www.dexitglobal.com/our-locations/",
+          "note": "States that DEXIT operates 237+ test centers across 230+ cities and describes owned center capabilities."
+        },
+        {
+          "label": "DEXIT Global - Official Services",
+          "url": "https://www.dexitglobal.com/services/",
+          "note": "Describes digital exams, venue management, CCTV surveillance, candidate verification, and live dashboard monitoring services."
+        },
+        {
+          "label": "DEXIT Global - Official Contact",
+          "url": "https://www.dexitglobal.com/contact-us/",
+          "note": "Lists DEXIT Global Limited Mumbai office/contact details at Andheri-Kurla Road, Mumbai 400059."
+        },
+        {
+          "label": "LEI Lookup - Legal Entity Record",
+          "url": "https://www.lei-lookup.com/record/335800PJDRE8V4U1CC37/",
+          "note": "Confirms DEXIT Global Limited legal entity status, former NSEIT name, CIN, and Mumbai 400059 registered address."
+        }
+      ],
+      "lastResearchedAt": "2026-05-06"
+    }
+  ]
+}
