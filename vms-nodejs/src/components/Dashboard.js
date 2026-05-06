@@ -97,6 +97,7 @@ function buildFilterOptions(rows) {
       examCityCentre: [],
       status: [],
       category: [],
+      venueType: [],
     };
   }
 
@@ -891,44 +892,7 @@ export default function Dashboard() {
           })}
         </div>
 
-        <div className="filters-row">
-          <div className="filter-col">
-            <label>Region</label>
-            <select
-              value={topFilters.region}
-              onChange={(event) => handleTopFilterChange("region", event.target.value)}
-            >
-              <option value="">All Regions</option>
-              {topRegionOptions.map((region) => (
-                <option key={region} value={region}>{region}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-col">
-            <label>State</label>
-            <select
-              value={topFilters.state}
-              onChange={(event) => handleTopFilterChange("state", event.target.value)}
-            >
-              <option value="">All States</option>
-              {topStateOptions.map((state) => (
-                <option key={state} value={state}>{state}</option>
-              ))}
-            </select>
-          </div>
-          <div className="filter-col">
-            <label>Exam City Centre</label>
-            <select
-              value={topFilters.examCityCentre}
-              onChange={(event) => handleTopFilterChange("examCityCentre", event.target.value)}
-            >
-              <option value="">All City Centres</option>
-              {topExamCityCentreOptions.map((centre) => (
-                <option key={centre} value={centre}>{centre}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+
 
 
 

@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: "30mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-const ROOT_PATH = path.join(__dirname, "..", "..");
+const ROOT_PATH = path.join(__dirname, "..");
 const DATA_PATH = path.join(ROOT_PATH, "Data");
 const OUTPUT_PATH = path.join(DATA_PATH, "Output");
 const PHOTOS_PATH = path.join(DATA_PATH, "Venue_Photos");
