@@ -1,0 +1,1 @@
+{"trained_on": "2026-04-12 19:50:06", "source_file": "C:\\Users\\DELL\\Desktop\\VMS Automation\\Data\\temp_train_upload.csv", "rows_used": 63882, "targets": ["UPDATED_CATEGORY", "UPDATED_SUBCATEGORY", "UPDATED_ITEM", "ISSUE_REMARK_BY_PRAFULL", "FINAL_ISSUE_REMARK_BY_PRAFULL", "ISSUE_CATEGORY"], "auto_approve_threshold": 0.4037856377148971}

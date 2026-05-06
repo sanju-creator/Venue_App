@@ -1,0 +1,17 @@
+Venue Analysis
+1) DMS code, duplicate removal and missing identification
+2) Venue name, cross check with DMS code repository, duplicate removals, missing identification, naming correction
+3) City, Check with DMS code repository, incorrect mapping, missing identification, naming correction
+4) State, Check with DMS code repository, incorrect mapping, missing identification, naming correction
+5) Region, Check with DMS code repository, incorrect mapping, missing identification, naming correction
+6) Address, Check with DMS code repository, incorrect mapping, missing identification, naming correction
+
+
+Manpower Analysis
+1) Employee name, check with repository, check with employee no., missing identification, naming correction, duplicate removal
+2) Employee ID, check with repository, check with employee names, missing identification, ID verification then correction if any, duplicate removal
+3) Designation, check with repository, check with employee names, missing identification, ID verification then correction if any, duplicate removal
+4) Projects, remove unwanted projects like shikar, naming correction 
+5) City, Check with DMS code repository, incorrect mapping, missing identification, naming correction
+6) State, Check with DMS code repository, incorrect mapping, missing identification, naming correction
+7) Region, Check with DMS code repository, incorrect mapping, missing identification, naming correction
