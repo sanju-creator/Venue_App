@@ -1,19 +1,36 @@
 @echo off
+setlocal
+
 echo ==============================================
 echo Starting VMS Node.js Website (Frontend + API)
 echo ==============================================
 echo.
 
-REM Navigate to the actual project directory
-cd /d "%~dp0vms-nodejs\vms-nodejs"
+cd /d "%~dp0vms-nodejs"
+if errorlevel 1 (
+  echo Project folder not found: vms-nodejs
+  pause
+  exit /b 1
+)
 
-echo [1/2] Starting API Server (Backend) on Port 5000...
-start "VMS API Server" cmd /k "node server.js"
+if not exist node_modules (
+  echo [Setup] node_modules not found. Installing dependencies...
+  call npm install
+  if errorlevel 1 (
+    echo npm install failed. Please check Node.js / npm setup.
+    pause
+    exit /b 1
+  )
+)
 
-echo [2/2] Starting Next.js Dev Server (Frontend) on Port 3000...
+echo [1/2] Starting API Server on Port 5001...
+start "VMS API Server" cmd /k "cd /d %CD% && set PORT=5001 && npm run api"
+
+echo [2/2] Starting Frontend on Port 3000...
+start "VMS Frontend Server" cmd /k "cd /d %CD% && npm run dev"
+
 echo.
-echo The website will be available at: http://localhost:3000
+echo Done. Open: http://localhost:3000
+echo You can close this window.
 echo.
-npm run dev
-
 pause
