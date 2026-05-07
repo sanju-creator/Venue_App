@@ -705,19 +705,22 @@ select {
 }
 
 .kpi-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: hidden;
+  overflow-y: visible;
   align-items: stretch;
   gap: 12px;
   margin-bottom: 26px;
   padding: 12px 10px;
   margin-top: 0;
+  scrollbar-width: thin;
 }
 
-/* Ensure cards shrink within grid tracks without overflow */
+/* Keep cards in a single horizontal row */
 .kpi-row > .kpi-box {
+  flex: 1 1 0;
   min-width: 0;
-  width: 100%;
 }
 
 .kpi-box {
@@ -752,12 +755,13 @@ select {
   color: #7488a0;
   font-size: 11px;
   font-weight: 800;
-  min-height: 34px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  line-height: 1.3;
+  min-height: 18px;
+  display: block;
+  line-height: 1.2;
   width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-val {
@@ -2194,7 +2198,7 @@ select {
   }
 
   .kpi-row {
-    grid-template-columns: repeat(3, minmax(110px, 1fr));
+    grid-template-columns: repeat(3, minmax(135px, 1fr));
   }
 
   .editor-toolbar,
@@ -2214,7 +2218,7 @@ select {
   }
 
   .kpi-row {
-    grid-template-columns: repeat(2, minmax(100px, 1fr));
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 
   .filters-row {
@@ -2228,6 +2232,12 @@ select {
   .kpi-row-3,
   .kpi-row-4 {
     grid-template-columns: repeat(2, minmax(100px, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .kpi-row {
+    grid-template-columns: 1fr;
   }
 }
 
