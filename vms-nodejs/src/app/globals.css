@@ -498,7 +498,7 @@ select {
 }
 
 .dash-logo-img {
-  height: 48px;
+  height: 62px;
   width: auto;
   object-fit: contain;
   display: block;
@@ -2199,6 +2199,10 @@ select {
     font-size: 32px;
   }
 
+  .dash-logo-img {
+    height: 56px;
+  }
+
   .venue-grid {
     grid-template-columns: 1fr;
   }
@@ -2256,6 +2260,10 @@ select {
 
   .dash-title {
     font-size: 30px;
+  }
+
+  .dash-logo-img {
+    height: 48px;
   }
 
   .kpi-row-3,
