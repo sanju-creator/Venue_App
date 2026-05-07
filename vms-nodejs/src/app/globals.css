@@ -2850,6 +2850,10 @@ select {
   gap: 10px;
 }
 
+.pk-project-kpi-grid {
+  margin-top: 8px;
+}
+
 .pk-venue-kpi-grid-6 {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
@@ -2988,6 +2992,7 @@ select {
   .pk-venue-person-grid { grid-template-columns: 1fr; }
   .pk-venue-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pk-venue-kpi-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pk-project-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 768px) {
@@ -2999,6 +3004,7 @@ select {
   .pk-issue-row { grid-template-columns: 90px 1fr 30px; }
   .pk-scores-grid { grid-template-columns: 1fr; }
   .pk-resource-top { grid-template-columns: 1fr; }
+  .pk-project-kpi-grid { grid-template-columns: 1fr; }
 }
 
 /* =============================================

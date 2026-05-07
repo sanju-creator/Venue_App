@@ -52,7 +52,7 @@ function getSourceHost(url) {
 
 
 export default function VenueDetailPage() {
-  const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo } = useApp();
+  const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo, API } = useApp();
   const [searchCode, setSearchCode] = useState(selectedVenueCode || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -73,6 +73,7 @@ export default function VenueDetailPage() {
   const [profileMaximized, setProfileMaximized] = useState(false);
   const [currentVenueDrillKey, setCurrentVenueDrillKey] = useState("");
   const [currentVenueDeepDetail, setCurrentVenueDeepDetail] = useState(null);
+  const [selectedProjectKey, setSelectedProjectKey] = useState("");
   const currentVenueInfoRef = useRef(null);
   const isMountedRef = useRef(false);
 
@@ -95,6 +96,7 @@ export default function VenueDetailPage() {
     setProfileMaximized(false);
     setCurrentVenueDrillKey("");
     setCurrentVenueDeepDetail(null);
+    setSelectedProjectKey("");
     setPersonData(null);
     try {
       const data = await fetchApi(`venue/${encodeURIComponent(clean)}/detail`);
@@ -292,6 +294,92 @@ export default function VenueDetailPage() {
       callLogRows,
     };
   }, [selectedVenueSummary, selectedManpower, personData]);
+
+  const projectReportData = useMemo(() => {
+    const byKey = new Map();
+    const venueMembers = new Set();
+    let venueInstances = 0;
+    let venueCallLogs = 0;
+
+    (manpower || []).forEach((person) => {
+      const personId = String(person.empId || person.name || "").trim();
+      if (personId) venueMembers.add(personId);
+      venueInstances += Number(person.instanceCount) || 0;
+      venueCallLogs += Number(person.callLogCount) || 0;
+
+      const projectTokens = splitCsvValues(person.projects || "");
+      const scopedProjects = projectTokens.length ? projectTokens : ["Unmapped / Not Declared"];
+
+      scopedProjects.forEach((projectLabel) => {
+        const project = String(projectLabel || "").trim() || "Unmapped / Not Declared";
+        const key = normalizeToken(project);
+        if (!key) return;
+        if (!byKey.has(key)) {
+          byKey.set(key, {
+            key,
+            project,
+            roles: new Set(),
+            people: new Map(),
+            totalInstances: 0,
+            totalCallLogs: 0,
+          });
+        }
+        const bucket = byKey.get(key);
+        bucket.totalInstances += Number(person.instanceCount) || 0;
+        bucket.totalCallLogs += Number(person.callLogCount) || 0;
+
+        splitCsvValues(person.roles || "").forEach((role) => {
+          if (role) bucket.roles.add(role);
+        });
+
+        const personKey = String(person.empId || person.name || `${project}-${bucket.people.size}`).trim();
+        if (!bucket.people.has(personKey)) {
+          bucket.people.set(personKey, {
+            person: person.name || "N/A",
+            empId: person.empId || "N/A",
+            phone: person.phone || "N/A",
+            tenure: person.tenure || "-",
+            roles: person.roles || "-",
+            instances: Number(person.instanceCount) || 0,
+            callLogs: Number(person.callLogCount) || 0,
+            remarks: person.callLogRemarks || "",
+          });
+        }
+      });
+    });
+
+    const rows = Array.from(byKey.values())
+      .map((bucket) => ({
+        key: bucket.key,
+        project: bucket.project,
+        memberCount: bucket.people.size,
+        totalInstances: bucket.totalInstances,
+        totalCallLogs: bucket.totalCallLogs,
+        roles: Array.from(bucket.roles),
+        members: Array.from(bucket.people.values()).sort(
+          (left, right) => (right.instances - left.instances) || (right.callLogs - left.callLogs),
+        ),
+      }))
+      .sort((left, right) => {
+        const score = right.memberCount - left.memberCount;
+        if (score !== 0) return score;
+        return left.project.localeCompare(right.project);
+      });
+
+    return {
+      rows,
+      byKey: new Map(rows.map((row) => [row.key, row])),
+      totalProjects: rows.length,
+      totalMembers: venueMembers.size,
+      totalInstances: venueInstances,
+      totalCallLogs: venueCallLogs,
+    };
+  }, [manpower]);
+
+  const selectedProjectReport = useMemo(() => {
+    if (!selectedProjectKey) return null;
+    return projectReportData.byKey.get(selectedProjectKey) || null;
+  }, [selectedProjectKey, projectReportData]);
 
   const renderCurrentVenueDrilldown = () => {
     if (!selectedVenueSummary || !currentVenueDrillKey || !currentVenueDrilldownData) return null;
@@ -812,7 +900,7 @@ export default function VenueDetailPage() {
                 <div className="venue-card-title">Venue Photo</div>
                 {activePhoto ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={`http://localhost:5000${activePhoto}`} alt="Venue" className="venue-main-photo" />
+                  <img src={`${API.replace(/\/api$/, "")}${activePhoto}`} alt="Venue" className="venue-main-photo" />
                 ) : (
                   <div className="photo-placeholder">Photo Not Available</div>
                 )}
@@ -1074,6 +1162,150 @@ export default function VenueDetailPage() {
               )}
             </div>
 
+            <div className="venue-card" style={{ marginTop: "14px" }}>
+              <div className="venue-card-title">
+                Project Report (Current Venue)
+                <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
+                  Click any project row to open drilldown details
+                </span>
+              </div>
+              {projectReportData.rows.length ? (
+                <>
+                  <div className="pk-venue-kpi-grid pk-project-kpi-grid">
+                    <div className="pk-venue-kpi-box">
+                      <span>Projects</span>
+                      <strong>{projectReportData.totalProjects}</strong>
+                    </div>
+                    <div className="pk-venue-kpi-box">
+                      <span>Team Members</span>
+                      <strong>{projectReportData.totalMembers}</strong>
+                    </div>
+                    <div className="pk-venue-kpi-box">
+                      <span>Total Instances</span>
+                      <strong>{projectReportData.totalInstances}</strong>
+                    </div>
+                    <div className="pk-venue-kpi-box is-danger">
+                      <span>Total Call Logs</span>
+                      <strong>{projectReportData.totalCallLogs}</strong>
+                    </div>
+                  </div>
+
+                  <div className="table-wrap" style={{ marginTop: "10px" }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Project</th>
+                          <th>Team Members</th>
+                          <th>Instances</th>
+                          <th>Call Logs</th>
+                          <th>Key Roles</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projectReportData.rows.map((row) => {
+                          const rolesPreview = row.roles.slice(0, 3).join(", ");
+                          const hiddenRoles = Math.max(0, row.roles.length - 3);
+                          return (
+                            <tr
+                              key={`project-report-${row.key}`}
+                              className={`pk-drill-row${selectedProjectKey === row.key ? " is-active" : ""}`}
+                              onClick={() => setSelectedProjectKey((prev) => (prev === row.key ? "" : row.key))}
+                            >
+                              <td><strong>{row.project}</strong></td>
+                              <td>{row.memberCount}</td>
+                              <td>{row.totalInstances}</td>
+                              <td>
+                                {row.totalCallLogs > 0 ? (
+                                  <span className="risk-flag risk-flag-danger">⚠ {row.totalCallLogs}</span>
+                                ) : (
+                                  <span className="risk-flag risk-flag-clean">✓ 0</span>
+                                )}
+                              </td>
+                              <td>{rolesPreview || "-"}{hiddenRoles ? ` +${hiddenRoles}` : ""}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {selectedProjectReport ? (
+                    <div className="pk-venue-drilldown-panel" style={{ marginTop: "12px" }}>
+                      <div className="pk-venue-drilldown-head">
+                        <div>
+                          <div className="pk-breadcrumb-lite">Project Report &gt; {selectedProjectReport.project} &gt; Team Detail</div>
+                          <strong>{selectedProjectReport.project} - Team Drilldown</strong>
+                        </div>
+                        <button className="mp-back-small-btn" onClick={() => setSelectedProjectKey("")}>
+                          Close
+                        </button>
+                      </div>
+
+                      <div className="pk-deep-summary-grid" style={{ marginBottom: "10px" }}>
+                        <div className="pk-deep-summary-box">
+                          <span>Team Members</span>
+                          <strong>{selectedProjectReport.memberCount}</strong>
+                        </div>
+                        <div className="pk-deep-summary-box">
+                          <span>Total Instances</span>
+                          <strong>{selectedProjectReport.totalInstances}</strong>
+                        </div>
+                        <div className="pk-deep-summary-box">
+                          <span>Total Call Logs</span>
+                          <strong>{selectedProjectReport.totalCallLogs}</strong>
+                        </div>
+                        <div className="pk-deep-summary-box">
+                          <span>Role Diversity</span>
+                          <strong>{selectedProjectReport.roles.length}</strong>
+                        </div>
+                      </div>
+
+                      <div className="table-wrap">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Person</th>
+                              <th>Employee ID</th>
+                              <th>Phone</th>
+                              <th>Tenure</th>
+                              <th>Roles</th>
+                              <th>Instances</th>
+                              <th>Call Logs</th>
+                              <th>Remarks</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedProjectReport.members.map((member, idx) => (
+                              <tr key={`project-member-${selectedProjectReport.key}-${idx}`}>
+                                <td><strong>{member.person}</strong></td>
+                                <td>{member.empId}</td>
+                                <td>{member.phone}</td>
+                                <td>{member.tenure}</td>
+                                <td>{member.roles}</td>
+                                <td>{member.instances}</td>
+                                <td>
+                                  {member.callLogs > 0 ? (
+                                    <span className="risk-flag risk-flag-danger">⚠ {member.callLogs}</span>
+                                  ) : (
+                                    <span className="risk-flag risk-flag-clean">✓ 0</span>
+                                  )}
+                                </td>
+                                <td style={{ maxWidth: "280px" }}>{member.remarks || "-"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="photo-placeholder" style={{ height: "auto", padding: "28px", borderStyle: "dashed" }}>
+                  No project mapping found for this venue manpower set.
+                </div>
+              )}
+            </div>
+
             {selectedManpower && (
               <div className="venue-card pk-venue-person-card" ref={currentVenueInfoRef}>
                 <div className="venue-card-title">
@@ -1168,4 +1400,3 @@ export default function VenueDetailPage() {
     </div>
   );
 }
-
