@@ -109,13 +109,29 @@ export function AppProvider({ children }) {
     [fetchApi, pendingPage],
   );
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(USER_KEY);
-    emitUserStoreChange();
-    setPendingPage(null);
-    setPage("dashboard");
-    setNotice("");
-  }, []);
+  const logout = useCallback(async () => {
+    const currentUser = user;
+    try {
+      if (currentUser?.user) {
+        await fetch(`${API}/logout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: currentUser.user,
+            sessionId: currentUser.sessionId || "",
+          }),
+        });
+      }
+    } catch {
+      // Logout should still proceed on client even if network call fails.
+    } finally {
+      localStorage.removeItem(USER_KEY);
+      emitUserStoreChange();
+      setPendingPage(null);
+      setPage("dashboard");
+      setNotice("");
+    }
+  }, [user]);
 
   const goTo = useCallback(
     (nextPage, options = {}) => {

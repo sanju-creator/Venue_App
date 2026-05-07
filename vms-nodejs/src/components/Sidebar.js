@@ -89,12 +89,13 @@ export default function Sidebar({
   mobileOpen = false,
   onToggleMobile = () => {},
 }) {
-  const { user, logout, goTo, sidebarCollapsed, setSidebarCollapsed, openVenueDetail } = useApp();
+  const { API, user, logout, goTo, sidebarCollapsed, setSidebarCollapsed, openVenueDetail } = useApp();
   const [openGroups, setOpenGroups] = useState({});
   const [openSections, setOpenSections] = useState(() =>
     Object.fromEntries(FILTER_SECTIONS.map((section) => [section.title, false]))
   );
   const [currentTime, setCurrentTime] = useState("");
+  const [sessionSummary, setSessionSummary] = useState(null);
 
   useEffect(() => {
     const updateTime = () => {
@@ -114,6 +115,39 @@ export default function Sidebar({
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user?.user) {
+      return () => {};
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadSummary = async () => {
+      try {
+        const response = await fetch(
+          `${API}/session-summary?user=${encodeURIComponent(user.user)}&limit=6`,
+          { signal: controller.signal },
+        );
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success || cancelled) return;
+        setSessionSummary(data);
+      } catch (error) {
+        if (error?.name !== "AbortError" && !cancelled) {
+          setSessionSummary(null);
+        }
+      }
+    };
+
+    loadSummary();
+    const timer = setInterval(loadSummary, 30000);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [API, user?.user]);
 
   const isDynamic =
     !!filterOptions &&
@@ -141,6 +175,24 @@ export default function Sidebar({
   const canOpenVenueDetail = Boolean(user && ["Admin", "Prafull"].includes(user.user));
   const venueSearchResults = venueSearchConfig?.results || [];
   const venueSearchQuery = (venueSearchConfig?.query || "").trim();
+  const visibleSessionSummary = user?.user ? sessionSummary : null;
+
+  const formatSessionTime = (isoTime) => {
+    if (!isoTime) return "-";
+    const date = new Date(isoTime);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date
+      .toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      })
+      .replace(",", "");
+  };
 
   return (
     <>
@@ -168,6 +220,45 @@ export default function Sidebar({
               <span className="sidebar-welcome-dot" />
               {currentTime}
             </div>
+            {visibleSessionSummary ? (
+              <div className="session-summary">
+                <div className="session-summary-title">Login Summary</div>
+                <div className="session-summary-row">
+                  <span>Last Login</span>
+                  <strong>{formatSessionTime(visibleSessionSummary.lastLoginAt)}</strong>
+                </div>
+                <div className="session-summary-row">
+                  <span>Last Logout</span>
+                  <strong>{formatSessionTime(visibleSessionSummary.lastLogoutAt)}</strong>
+                </div>
+                <div className="session-summary-meta">
+                  Total Sessions: <strong>{visibleSessionSummary.totalSessions || 0}</strong>
+                </div>
+
+                {visibleSessionSummary.previousCompletedSession ? (
+                  <div className="session-summary-prev">
+                    Previous Session:
+                    <div>
+                      In: {formatSessionTime(visibleSessionSummary.previousCompletedSession.loginAt)}
+                    </div>
+                    <div>
+                      Out: {formatSessionTime(visibleSessionSummary.previousCompletedSession.logoutAt)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {Array.isArray(visibleSessionSummary.recentSessions) && visibleSessionSummary.recentSessions.length ? (
+                  <div className="session-history-list">
+                    {visibleSessionSummary.recentSessions.slice(0, 3).map((entry) => (
+                      <div key={entry.sessionId || entry.loginAt} className="session-history-item">
+                        <div>In: {formatSessionTime(entry.loginAt)}</div>
+                        <div>Out: {entry.isActive ? "Active" : formatSessionTime(entry.logoutAt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

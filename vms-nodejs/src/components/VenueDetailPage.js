@@ -42,6 +42,14 @@ function hasProject(projectsText, projectName) {
   return splitCsvValues(projectsText).some((entry) => normalizeToken(entry) === target);
 }
 
+function getSourceHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 
 export default function VenueDetailPage() {
   const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo } = useApp();
@@ -53,7 +61,7 @@ export default function VenueDetailPage() {
   const [activePhoto, setActivePhoto] = useState("");
   const [occupancyPercent, setOccupancyPercent] = useState(0);
   const [manpower, setManpower] = useState([]);
-  const [googleRemarks, setGoogleRemarks] = useState([]);
+  const [marketResearch, setMarketResearch] = useState(null);
 
   // Person Kundli state
   const [selectedManpower, setSelectedManpower] = useState(null);
@@ -96,7 +104,7 @@ export default function VenueDetailPage() {
       setActivePhoto((data?.photos || [])[0] || "");
       setOccupancyPercent(data?.occupancyPercent || 0);
       setManpower(data?.manpower || []);
-      setGoogleRemarks(data?.googleRemarks || []);
+      setMarketResearch(data?.marketResearch || null);
       setSelectedVenueCode(clean);
       setSearchCode(clean);
     } catch (err) {
@@ -105,7 +113,7 @@ export default function VenueDetailPage() {
       setVenue(null);
       setPhotos([]);
       setManpower([]);
-      setGoogleRemarks([]);
+      setMarketResearch(null);
     } finally {
       if (isMountedRef.current) setBusy(false);
     }
@@ -870,70 +878,93 @@ export default function VenueDetailPage() {
 
             <div className="venue-card" style={{ marginTop: "24px" }}>
               <div className="venue-card-title">
-                Google Remarks
+                Market Research & Source Summary
                 <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
-                  Google review & ratings information for this venue
+                  Venue-wise researched summary with verified source links
                 </span>
               </div>
-              {googleRemarks.length > 0 ? (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Venue Name</th>
-                        <th>Google Rating</th>
-                        <th>Review Count</th>
-                        <th>Remarks</th>
-                        <th>Google Link</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {googleRemarks.map((g, idx) => {
-                        const rating = parseFloat(g.googleRatings) || 0;
-                        const ratingColor = rating >= 4 ? "#16a34a" : rating >= 3 ? "#d97706" : rating > 0 ? "#dc2626" : "#64748b";
-                        const stars = rating > 0 ? "⭐".repeat(Math.round(rating)) : "—";
-                        return (
-                          <tr key={idx}>
-                            <td>{g.venueName || pretty(venue.venue_name || venue.name)}</td>
-                            <td>
-                              <span style={{ fontWeight: 700, color: ratingColor, fontSize: "15px" }}>
-                                {rating > 0 ? rating.toFixed(1) : "N/A"}
-                              </span>
-                              <div style={{ fontSize: "11px", marginTop: "2px" }}>{stars}</div>
-                            </td>
-                            <td>
-                              <strong>{g.googleReviewCount || "N/A"}</strong>
-                            </td>
-                            <td>
-                              <span style={{ fontSize: "13px", color: "#334155" }}>
-                                {g.remarks || pretty(venue.market_remark) || "No specific remarks"}
-                              </span>
-                            </td>
-                            <td>
-                              {g.googleLink ? (
-                                <a
-                                  href={g.googleLink}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{ color: "#2563eb", fontSize: "12px", fontWeight: 600, textDecoration: "underline" }}
-                                >
-                                  View on Google
-                                </a>
-                              ) : (
-                                <span style={{ color: "#94a3b8", fontSize: "12px" }}>N/A</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              {marketResearch ? (
+                <div className="market-research-panel">
+                  <div className="market-research-head">
+                    <div>
+                      <div className="market-research-name">
+                        {marketResearch.venueName || pretty(venue.venue_name || venue.name)}
+                      </div>
+                      <div className="market-research-position">
+                        {marketResearch.marketPosition || "Market position not recorded"}
+                      </div>
+                    </div>
+                    <div className="market-research-status">
+                      <span>{marketResearch.status || "Research pending"}</span>
+                      <strong>{marketResearch.confidence || "Low"} Confidence</strong>
+                    </div>
+                  </div>
+
+                  <div className="market-research-summary">
+                    {marketResearch.summary || "Market research summary has not been recorded for this venue yet."}
+                  </div>
+
+                  <div className="market-research-grid">
+                    <div>
+                      <div className="market-research-subtitle">Operational Upside</div>
+                      {(marketResearch.opportunities || []).length ? (
+                        <ul className="market-research-list">
+                          {marketResearch.opportunities.map((item, idx) => (
+                            <li key={`opportunity-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="market-research-muted">No opportunity notes recorded.</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="market-research-subtitle">Market / Access Risks</div>
+                      {(marketResearch.risks || []).length ? (
+                        <ul className="market-research-list">
+                          {marketResearch.risks.map((item, idx) => (
+                            <li key={`risk-${idx}`}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="market-research-muted">No risk notes recorded.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {(marketResearch.sources || []).length ? (
+                    <div className="market-source-list">
+                      <div className="market-research-subtitle">Sources</div>
+                      {marketResearch.sources.map((source, idx) => (
+                        <a
+                          key={`${source.url || source.label}-${idx}`}
+                          className="market-source-link"
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <span>{source.label || getSourceHost(source.url) || "Source"}</span>
+                          <strong>{getSourceHost(source.url)}</strong>
+                          {source.note ? <small>{source.note}</small> : null}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="market-research-no-source">
+                      No verified external source is attached yet.
+                    </div>
+                  )}
+
+                  {marketResearch.lastResearchedAt ? (
+                    <div className="market-research-date">
+                      Last researched: {marketResearch.lastResearchedAt}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="google-no-info">
-                  <span className="google-no-info-icon">🔍</span>
-                  <div className="google-no-info-text">No Information Available for this Venue</div>
-                  <div className="google-no-info-sub">Google review & rating data has not been recorded for this venue yet.</div>
+                  <span className="google-no-info-icon">MR</span>
+                  <div className="google-no-info-text">No market research available for this venue</div>
+                  <div className="google-no-info-sub">Add source-backed market research to show venue-specific analysis here.</div>
                 </div>
               )}
             </div>
@@ -1137,3 +1168,4 @@ export default function VenueDetailPage() {
     </div>
   );
 }
+

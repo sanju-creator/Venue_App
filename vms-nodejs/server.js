@@ -17,6 +17,9 @@ const ROOT_PATH = path.join(__dirname, "..");
 const DATA_PATH = path.join(ROOT_PATH, "Data");
 const OUTPUT_PATH = path.join(DATA_PATH, "Output");
 const PHOTOS_PATH = path.join(DATA_PATH, "Venue_Photos");
+const SESSION_LOG_PATH = path.join(DATA_PATH, "user_session_logs.json");
+const MARKET_RESEARCH_PATH = path.join(DATA_PATH, "market_research.json");
+const MAX_SESSION_LOGS = 5000;
 
 if (!fs.existsSync(OUTPUT_PATH)) fs.mkdirSync(OUTPUT_PATH, { recursive: true });
 if (!fs.existsSync(PHOTOS_PATH)) fs.mkdirSync(PHOTOS_PATH, { recursive: true });
@@ -250,6 +253,190 @@ function writeWorkbook(filePath, rows, headers = null, sheetName = "Sheet1") {
 function clearCaches() {
   dashboardCache = null;
   occupancyCache = null;
+}
+
+function ensureSessionLogFile() {
+  if (!fs.existsSync(path.dirname(SESSION_LOG_PATH))) {
+    fs.mkdirSync(path.dirname(SESSION_LOG_PATH), { recursive: true });
+  }
+  if (!fs.existsSync(SESSION_LOG_PATH)) {
+    fs.writeFileSync(SESSION_LOG_PATH, JSON.stringify({ sessions: [] }, null, 2), "utf8");
+  }
+}
+
+function readSessionLogs() {
+  ensureSessionLogFile();
+  try {
+    const raw = fs.readFileSync(SESSION_LOG_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.sessions)) return { sessions: [] };
+    return { sessions: parsed.sessions };
+  } catch {
+    return { sessions: [] };
+  }
+}
+
+function writeSessionLogs(store) {
+  const safeSessions = Array.isArray(store?.sessions) ? store.sessions : [];
+  const trimmed =
+    safeSessions.length > MAX_SESSION_LOGS
+      ? safeSessions.slice(safeSessions.length - MAX_SESSION_LOGS)
+      : safeSessions;
+  ensureSessionLogFile();
+  fs.writeFileSync(SESSION_LOG_PATH, JSON.stringify({ sessions: trimmed }, null, 2), "utf8");
+}
+
+function getClientIp(req) {
+  const forwarded = cleanText(req.headers["x-forwarded-for"] || "");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return cleanText(req.socket?.remoteAddress || "");
+}
+
+function createSessionId(username) {
+  const safeUser = cleanText(username).replace(/[^a-z0-9_-]/gi, "").toLowerCase() || "user";
+  return `${safeUser}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function toMs(value) {
+  const date = new Date(value);
+  const ms = date.getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function buildSessionSummary(username, sessions, currentSessionId = "") {
+  const userKey = cleanText(username);
+  const userSessions = (Array.isArray(sessions) ? sessions : [])
+    .filter((entry) => cleanText(entry?.user) === userKey)
+    .sort((a, b) => toMs(b?.loginAt) - toMs(a?.loginAt));
+
+  const withLogout = userSessions.filter((entry) => cleanText(entry?.logoutAt));
+  const latestLogin = userSessions[0] || null;
+  const latestLogout = withLogout.sort((a, b) => toMs(b?.logoutAt) - toMs(a?.logoutAt))[0] || null;
+  const previousCompletedSession =
+    withLogout.find((entry) => cleanText(entry?.sessionId) !== cleanText(currentSessionId)) || null;
+
+  return {
+    user: userKey,
+    totalSessions: userSessions.length,
+    activeSessions: userSessions.filter((entry) => !cleanText(entry?.logoutAt)).length,
+    currentSessionId: cleanText(currentSessionId) || cleanText(latestLogin?.sessionId),
+    lastLoginAt: cleanText(latestLogin?.loginAt) || null,
+    lastLogoutAt: cleanText(latestLogout?.logoutAt) || null,
+    previousCompletedSession: previousCompletedSession
+      ? {
+          sessionId: cleanText(previousCompletedSession.sessionId),
+          loginAt: cleanText(previousCompletedSession.loginAt) || null,
+          logoutAt: cleanText(previousCompletedSession.logoutAt) || null,
+        }
+      : null,
+    recentSessions: userSessions.slice(0, 8).map((entry) => ({
+      sessionId: cleanText(entry?.sessionId),
+      loginAt: cleanText(entry?.loginAt) || null,
+      logoutAt: cleanText(entry?.logoutAt) || null,
+      isActive: !cleanText(entry?.logoutAt),
+    })),
+  };
+}
+
+function normalizeResearchKey(value) {
+  return cleanText(value)
+    .toUpperCase()
+    .replace(/FORMERLY KNOWN AS NSEIT LIMITED/g, "")
+    .replace(/NSEIT LIMITED/g, "DEXIT GLOBAL LIMITED")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function readMarketResearchRecords() {
+  if (!fs.existsSync(MARKET_RESEARCH_PATH)) return [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(MARKET_RESEARCH_PATH, "utf8"));
+    return Array.isArray(parsed?.venues) ? parsed.venues : [];
+  } catch (error) {
+    console.error("Market research read error:", error.message);
+    return [];
+  }
+}
+
+function buildMarketResearchFallback(record) {
+  const venueName = cleanText(record?.venue_name || record?.name || record?.venue || "Venue");
+  const city = cleanText(record?.city || record?.district || "");
+  const state = cleanText(record?.state || "");
+  const address = cleanText(record?.complete_address || record?.address || "");
+  const locationText = [city, state].filter(Boolean).join(", ");
+  return {
+    venueName,
+    status: "Research pending",
+    confidence: "Low",
+    marketPosition: locationText ? `Local venue in ${locationText}` : "Local venue",
+    summary:
+      "External market research has not been curated for this venue yet. Use the internal venue profile and add verified public sources before using this section for final market decisions.",
+    opportunities: [
+      "Add official venue/company source, exam-center listing, and nearby-access notes.",
+      "Validate current address, operating status, and candidate entry/accessibility before scheduling.",
+    ],
+    risks: [
+      "No verified external market source is currently attached to this venue.",
+    ],
+    sources: [],
+    searchQuery: [venueName, address, city, state].filter(Boolean).join(" "),
+    lastResearchedAt: "",
+  };
+}
+
+function findMarketResearchForVenue(record, code) {
+  const records = readMarketResearchRecords();
+  const dmsCandidates = [code, record?.dms_code, record?.venue_code, record?.code].map(cleanDms).filter(Boolean);
+  const textCandidates = [
+    record?.venue_name,
+    record?.name,
+    record?.complete_address,
+    record?.address,
+    record?.city,
+    record?.state,
+  ]
+    .map(normalizeResearchKey)
+    .filter(Boolean);
+
+  const matched = records.find((entry) => {
+    const entryCodes = Array.isArray(entry?.dmsCodes) ? entry.dmsCodes.map(cleanDms).filter(Boolean) : [];
+    if (entryCodes.length && dmsCandidates.some((candidate) => entryCodes.includes(candidate))) return true;
+
+    const entryTexts = [entry?.venueName, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
+      .map(normalizeResearchKey)
+      .filter(Boolean);
+    if (entryTexts.some((entryText) => textCandidates.some((candidate) => candidate.includes(entryText) || entryText.includes(candidate)))) {
+      return true;
+    }
+
+    const addressContains = Array.isArray(entry?.addressContains)
+      ? entry.addressContains.map(normalizeResearchKey).filter(Boolean)
+      : [];
+    return addressContains.length && addressContains.every((needle) => textCandidates.some((candidate) => candidate.includes(needle)));
+  });
+
+  if (!matched) return buildMarketResearchFallback(record);
+  return {
+    venueName: cleanText(matched.venueName || record?.venue_name || record?.name),
+    status: cleanText(matched.status || "Researched"),
+    confidence: cleanText(matched.confidence || "Medium"),
+    marketPosition: cleanText(matched.marketPosition || ""),
+    summary: cleanText(matched.summary || ""),
+    opportunities: Array.isArray(matched.opportunities) ? matched.opportunities.map(cleanText).filter(Boolean) : [],
+    risks: Array.isArray(matched.risks) ? matched.risks.map(cleanText).filter(Boolean) : [],
+    sources: Array.isArray(matched.sources)
+      ? matched.sources
+          .map((source) => ({
+            label: cleanText(source?.label || "Source"),
+            url: cleanText(source?.url || ""),
+            note: cleanText(source?.note || ""),
+          }))
+          .filter((source) => source.label || source.url)
+      : [],
+    searchQuery: cleanText(matched.searchQuery || ""),
+    lastResearchedAt: cleanText(matched.lastResearchedAt || ""),
+  };
 }
 
 function pickLatestAnalysisFile() {
@@ -1844,16 +2031,97 @@ app.post("/api/login", (req, res) => {
   const username = cleanText(req.body?.username);
   const password = cleanText(req.body?.password);
   if (USERS[username] && USERS[username] === password) {
+    const store = readSessionLogs();
+    const nowIso = new Date().toISOString();
+    const sessionId = createSessionId(username);
+    store.sessions.push({
+      sessionId,
+      user: username,
+      loginAt: nowIso,
+      logoutAt: null,
+      loginIp: getClientIp(req),
+      logoutIp: "",
+      userAgent: cleanText(req.get("user-agent")).slice(0, 300),
+    });
+    writeSessionLogs(store);
+
     const datasets = Object.entries(FILES)
       .filter(([, config]) => config.users.includes(username))
       .map(([key]) => key);
+
     return res.json({
       success: true,
       user: username,
       datasets,
+      sessionId,
+      sessionSummary: buildSessionSummary(username, store.sessions, sessionId),
     });
   }
   return res.status(401).json({ success: false, message: "Invalid credentials" });
+});
+
+app.post("/api/logout", (req, res) => {
+  const username = cleanText(req.body?.username);
+  const sessionId = cleanText(req.body?.sessionId);
+
+  if (!username || !USERS[username]) {
+    return res.status(400).json({ success: false, message: "Valid user is required" });
+  }
+
+  const store = readSessionLogs();
+  const nowIso = new Date().toISOString();
+  let updated = false;
+
+  if (sessionId) {
+    const found = store.sessions.find(
+      (entry) =>
+        cleanText(entry?.sessionId) === sessionId &&
+        cleanText(entry?.user) === username &&
+        !cleanText(entry?.logoutAt),
+    );
+    if (found) {
+      found.logoutAt = nowIso;
+      found.logoutIp = getClientIp(req);
+      updated = true;
+    }
+  }
+
+  if (!updated) {
+    for (let i = store.sessions.length - 1; i >= 0; i -= 1) {
+      const entry = store.sessions[i];
+      if (cleanText(entry?.user) === username && !cleanText(entry?.logoutAt)) {
+        entry.logoutAt = nowIso;
+        entry.logoutIp = getClientIp(req);
+        updated = true;
+        break;
+      }
+    }
+  }
+
+  if (updated) writeSessionLogs(store);
+  return res.json({
+    success: true,
+    updated,
+    sessionSummary: buildSessionSummary(username, store.sessions),
+  });
+});
+
+app.get("/api/session-summary", (req, res) => {
+  const username = cleanText(req.query.user);
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 20) : 8;
+
+  if (!username || !USERS[username]) {
+    return res.status(400).json({ success: false, message: "Valid user is required" });
+  }
+
+  const store = readSessionLogs();
+  const summary = buildSessionSummary(username, store.sessions);
+  return res.json({
+    success: true,
+    ...summary,
+    recentSessions: summary.recentSessions.slice(0, limit),
+  });
 });
 
 app.get("/api/datasets", (req, res) => {
@@ -2128,38 +2396,14 @@ app.get("/api/venue/:code/detail", (req, res) => {
     console.error("Manpower detail error:", err);
   }
 
-  // Google review & ratings data
-  let googleRemarks = [];
-  try {
-    const googlePath = path.join(DATA_PATH, "Google review and ratings.xlsx");
-    if (fs.existsSync(googlePath)) {
-      const googleWorkbook = readWorkbookSmart(googlePath);
-      const googleRows = (googleWorkbook.rows || []).map((r) => normalizeRowKeys(r));
-      const filtered = googleRows.filter((r) => {
-        const dms = cleanDms(r.dms_code || r.venue_code);
-        return dms === code;
-      });
-      googleRemarks = filtered.map((r) => ({
-        venueName: cleanText(r.venue_name || r.name || ""),
-        googleRatings: cleanText(r.google_ratings || ""),
-        googleReviewCount: cleanText(r.google_review_count || ""),
-        googleLink: cleanText(r.google_link || r.google_url || r.link || ""),
-        remarks: cleanText(r.remarks || r.remark || r.google_remarks || r.market_remark || ""),
-        address: cleanText(r.address || r.google_address || ""),
-        category: cleanText(r.category || ""),
-        status: cleanText(r.status || ""),
-      }));
-    }
-  } catch (err) {
-    console.error("Google remarks detail error:", err);
-  }
+  const marketResearch = findMarketResearchForVenue(record, code);
 
   return res.json({
     venue: record,
     photos,
     occupancyPercent: occupancyPct,
     manpower,
-    googleRemarks,
+    marketResearch,
   });
 });
 

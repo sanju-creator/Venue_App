@@ -1057,18 +1057,17 @@ export default function Dashboard() {
                   <RechartsTooltip
                     formatter={(value, name, props) => [formatCount(value), `${name} (${props.payload.percent}%)`]}
                   />
-                  <Legend
-                    iconType="circle"
-                    verticalAlign="bottom"
-                    height={28}
-                    formatter={(value, entry) => (
-                      <span style={{ color: '#475569', fontSize: '13px', marginLeft: '4px' }}>
-                        {value} {entry?.payload?.percent !== undefined ? `(${entry.payload.percent}%)` : ''}
-                      </span>
-                    )}
-                  />
                 </PieChart>
               </ResponsiveContainer>
+            </div>
+            <div className="chart-insight-card">
+              {categoryPieData.map((item) => (
+                <div key={item.name} className="chart-insight-pill">
+                  <span className="chart-insight-dot" style={{ backgroundColor: PIE_COLORS[item.name] || "#cbd5e1" }} />
+                  <span className="chart-insight-pill-key">{item.name}</span>
+                  <span className="chart-insight-pill-value">{item.percent}%</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -1111,14 +1110,17 @@ export default function Dashboard() {
                   />
                 </RadarChart>
               </ResponsiveContainer>
-              <div className="infra-badge-row">
+              <div className="chart-insight-card chart-insight-card--stacked">
                 {infraData.map((item) => {
                   const level = item.value < 50 ? "critical" : item.value < 75 ? "warning" : "healthy";
-                  const icon = level === "critical" ? "🔴" : level === "warning" ? "🟡" : "🟢";
                   return (
-                    <span key={item.subject} className={`infra-badge infra-${level}`}>
-                      {icon} {item.subject}: {item.value}%
-                    </span>
+                    <div key={item.subject} className={`chart-insight-row chart-insight-row--${level}`}>
+                      <span className="chart-insight-row-label">
+                        <span className={`chart-insight-dot chart-insight-dot--${level}`} />
+                        {item.subject}
+                      </span>
+                      <span className="chart-insight-row-value">{item.value}%</span>
+                    </div>
                   );
                 })}
               </div>
@@ -1142,18 +1144,22 @@ export default function Dashboard() {
               />
             </div>
             {stateSummary && (
-              <div className="map-summary-box">
-                <div className="map-summary-item">
-                  <span className="summary-label">Total States</span>
-                  <span className="summary-val">{stateSummary.totalStates}</span>
+              <div className="chart-insight-card chart-insight-card--stacked">
+                <div className="chart-insight-row">
+                  <span className="chart-insight-row-label">Total States</span>
+                  <span className="chart-insight-row-value">{stateSummary.totalStates}</span>
                 </div>
-                <div className="map-summary-item">
-                  <span className="summary-label">Max Capacity</span>
-                  <span className="summary-val">{stateSummary.maxState} ({formatCount(stateSummary.maxCapacity)})</span>
+                <div className="chart-insight-row">
+                  <span className="chart-insight-row-label">Max Capacity</span>
+                  <span className="chart-insight-row-value">
+                    {stateSummary.maxState} ({formatCount(stateSummary.maxCapacity)})
+                  </span>
                 </div>
-                <div className="map-summary-item">
-                  <span className="summary-label">Min Capacity</span>
-                  <span className="summary-val">{stateSummary.minState} ({formatCount(stateSummary.minCapacity)})</span>
+                <div className="chart-insight-row">
+                  <span className="chart-insight-row-label">Min Capacity</span>
+                  <span className="chart-insight-row-value">
+                    {stateSummary.minState} ({formatCount(stateSummary.minCapacity)})
+                  </span>
                 </div>
               </div>
             )}
@@ -1423,4 +1429,8 @@ export default function Dashboard() {
     </div>
   );
 }
+
+
+
+
 
