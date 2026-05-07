@@ -862,7 +862,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="kpi-row">
+        <div className="kpi-row kpi-row-dashboard">
           {KPI_CARDS.map((card) => {
             const val = kpis[card.key];
             const isBlacklisted = card.key === "blacklisted" || card.key === "blacklistedSeatCapacity";
@@ -1429,7 +1429,6 @@ export default function Dashboard() {
     </div>
   );
 }
-
 
 
 
