@@ -112,24 +112,7 @@ export default function StateMap({ stateName, data = {}, onDistrictClick }) {
   return (
     <div className="state-map-wrapper" style={{ width: "100%", maxWidth: "800px", height: "500px", margin: "0 auto", position: "relative" }}>
       {tooltipContent && (
-        <div
-          className="map-tooltip"
-          style={{
-            position: "absolute",
-            top: "10px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(15, 23, 42, 0.9)",
-            color: "#fff",
-            padding: "4px 10px",
-            borderRadius: "6px",
-            fontSize: "12px",
-            pointerEvents: "none",
-            zIndex: 10,
-            boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-            border: "1px solid rgba(255,255,255,0.1)",
-          }}
-        >
+        <div className="map-tooltip">
           {tooltipContent}
         </div>
       )}
@@ -200,18 +183,7 @@ export default function StateMap({ stateName, data = {}, onDistrictClick }) {
           )}
         </Geographies>
       </ComposableMap>
-      <div
-        className="map-legend"
-        style={{
-          position: "absolute",
-          bottom: "10px",
-          right: "10px",
-          background: "rgba(255,255,255,0.8)",
-          padding: "5px",
-          borderRadius: "4px",
-          fontSize: "10px",
-        }}
-      >
+      <div className="map-legend">
         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
           <div style={{ width: "12px", height: "12px", background: "#f8fafc", border: "1px solid #cbd5e1" }}></div>
           <span>No Venues</span>

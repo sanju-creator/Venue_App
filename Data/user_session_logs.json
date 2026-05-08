@@ -1,3 +1,22 @@
 {
-  "sessions": []
+  "sessions": [
+    {
+      "sessionId": "admin_1778136026344_2t0rd6ls",
+      "user": "Admin",
+      "loginAt": "2026-05-07T06:40:26.344Z",
+      "logoutAt": "2026-05-07T07:14:02.984Z",
+      "loginIp": "::1",
+      "logoutIp": "::1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+    },
+    {
+      "sessionId": "admin_1778145977992_bxsx28nq",
+      "user": "Admin",
+      "loginAt": "2026-05-07T09:26:17.992Z",
+      "logoutAt": null,
+      "loginIp": "::1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+    }
+  ]
 }

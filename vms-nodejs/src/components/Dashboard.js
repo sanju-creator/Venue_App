@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   PieChart,
   Pie,
@@ -16,7 +16,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  Legend,
   ResponsiveContainer,
   LabelList,
 } from "recharts";
@@ -66,6 +65,52 @@ const CATEGORY_CHART_KEY_TO_CATEGORY = {
   "BL-C": "BL-C",
   BL: "BL",
 };
+
+const CATEGORY_MEANINGS = {
+  A: "Fully ready",
+  B: "Operational with minor gaps",
+  C: "Needs improvement",
+  BL: "Blacklisted",
+  "BL-C": "Customer-specific blacklist",
+};
+
+const CATEGORY_LABEL_FLOAT_OFFSETS = {
+  A: { dx: -6, dy: -14 },
+  B: { dx: 10, dy: 2 },
+  C: { dx: 12, dy: 10 },
+  BL: { dx: 8, dy: -10 },
+  "BL-C": { dx: 12, dy: 14 },
+};
+
+const RADIAN = Math.PI / 180;
+
+function renderCategoryPieLabel(props) {
+  const { cx, cy, midAngle, outerRadius, percent: share, name } = props;
+  if (!share || !name) return null;
+
+  const isSmallSlice = share < 0.08;
+  const baseRadius = Number(outerRadius || 0) + (isSmallSlice ? 28 : 16);
+  const baseX = Number(cx || 0) + baseRadius * Math.cos(-midAngle * RADIAN);
+  const baseY = Number(cy || 0) + baseRadius * Math.sin(-midAngle * RADIAN);
+  const offset = CATEGORY_LABEL_FLOAT_OFFSETS[name] || { dx: 0, dy: 0 };
+  const x = baseX + offset.dx;
+  const y = baseY + offset.dy;
+  const textAnchor = x > Number(cx || 0) ? "start" : "end";
+  const percentage = Number((share * 100).toFixed(1));
+
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#334155"
+      textAnchor={textAnchor}
+      dominantBaseline="central"
+      style={{ fontSize: 10, fontWeight: 800, pointerEvents: "none" }}
+    >
+      {`${name} ${percentage}%`}
+    </text>
+  );
+}
 
 const numberFormat = new Intl.NumberFormat("en-IN");
 
@@ -149,6 +194,8 @@ const KPI_BAR_COLORS = [
   "#ef4444", "#ef4444", "#f59e0b", "#f59e0b",
   "#64748b", "#64748b"
 ];
+const UNIFIED_EMPLOYEE_TYPES = ["DEXIT", "Outsourced"];
+const MANPOWER_ANALYTICS_USERS = ["Admin", "Prafull"];
 
 function sumBy(rows, getter) {
   return rows.reduce((sum, row) => sum + toNumber(getter(row)), 0);
@@ -216,11 +263,14 @@ function DashboardTable({ headers, rows, footerRow }) {
 }
 
 export default function Dashboard() {
-  const { API, openVenueDetail, openManpowerAnalytics, user, goTo, setMasterMapState } = useApp();
+  const { API, openVenueDetail, openManpowerAnalytics, user, goTo, setMasterMapState, fetchApi } = useApp();
 
   const [dashboardData, setDashboardData] = useState(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [manpowerSnapshot, setManpowerSnapshot] = useState(null);
+  const [manpowerSnapshotBusy, setManpowerSnapshotBusy] = useState(false);
+  const [manpowerSnapshotError, setManpowerSnapshotError] = useState("");
 
   const [selectedFilters, setSelectedFilters] = useState(null);
   const [topFilters, setTopFilters] = useState({
@@ -232,6 +282,9 @@ export default function Dashboard() {
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [activePerspective, setActivePerspective] = useState("venue");
+  const venuePerspectiveRef = useRef(null);
+  const manpowerPerspectiveRef = useRef(null);
 
   // Unified Hierarchical Drilldown Path
   const [drilldownPath, setDrilldownPath] = useState({
@@ -273,6 +326,19 @@ export default function Dashboard() {
       return next;
     });
   };
+
+  const canViewUnifiedManpower = useMemo(
+    () => Boolean(user?.user && MANPOWER_ANALYTICS_USERS.includes(user.user)),
+    [user],
+  );
+
+  const switchPerspective = useCallback((nextPerspective) => {
+    setActivePerspective(nextPerspective);
+    const target = nextPerspective === "manpower" ? manpowerPerspectiveRef.current : venuePerspectiveRef.current;
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
 
 
   useEffect(() => {
@@ -329,6 +395,58 @@ export default function Dashboard() {
     };
   }, [API]);
 
+  useEffect(() => {
+    if (!canViewUnifiedManpower && activePerspective === "manpower") {
+      setActivePerspective("venue");
+    }
+  }, [canViewUnifiedManpower, activePerspective]);
+
+  useEffect(() => {
+    let active = true;
+    if (!canViewUnifiedManpower) {
+      setManpowerSnapshot(null);
+      setManpowerSnapshotBusy(false);
+      setManpowerSnapshotError("");
+      return () => {
+        active = false;
+      };
+    }
+    const loadManpowerSnapshot = async () => {
+      if (!active) return;
+      setManpowerSnapshotBusy(true);
+      setManpowerSnapshotError("");
+      try {
+        const data = await fetchApi("manpower/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            search: "",
+            employeeTypes: [...UNIFIED_EMPLOYEE_TYPES],
+            projects: [],
+            employees: [],
+            tenure: [],
+            roles: [],
+            regions: [],
+            states: [],
+            examCityCentres: [],
+          }),
+        });
+        if (!active) return;
+        setManpowerSnapshot(data || null);
+      } catch (err) {
+        if (!active) return;
+        setManpowerSnapshot(null);
+        setManpowerSnapshotError(err.message || "Could not load manpower snapshot");
+      } finally {
+        if (active) setManpowerSnapshotBusy(false);
+      }
+    };
+    loadManpowerSnapshot();
+    return () => {
+      active = false;
+    };
+  }, [fetchApi, canViewUnifiedManpower]);
+
   const rows = useMemo(() => dashboardData?.rows || [], [dashboardData]);
 
   const filterOptions = useMemo(() => buildFilterOptions(rows), [rows]);
@@ -365,17 +483,29 @@ export default function Dashboard() {
     return uniqueSorted(baseRows.map((row) => buildExamCityCentre(row)));
   }, [sidebarScopedRows, topFilters.region, topFilters.state]);
 
-  const rowsWithoutStatusFilter = useMemo(() => {
+  const venueSearchScopeRows = useMemo(() => {
     if (!selectedFilters) return [];
 
     return sidebarScopedRows.filter((row) => {
       if (topFilters.region && row.region !== topFilters.region) return false;
       if (topFilters.state && row.state !== topFilters.state) return false;
       if (topFilters.examCityCentre && buildExamCityCentre(row) !== topFilters.examCityCentre) return false;
-      if (!doesMatchSearch(row, searchQuery)) return false;
       return true;
     });
-  }, [sidebarScopedRows, selectedFilters, topFilters, searchQuery]);
+  }, [sidebarScopedRows, selectedFilters, topFilters]);
+
+  const rowsWithoutStatusFilter = useMemo(() => {
+    if (!selectedFilters) return [];
+    return venueSearchScopeRows.filter((row) => doesMatchSearch(row, searchQuery));
+  }, [venueSearchScopeRows, selectedFilters, searchQuery]);
+
+  const venueSearchResults = useMemo(() => {
+    const cleaned = searchInput.trim().toLowerCase();
+    const base = cleaned
+      ? venueSearchScopeRows.filter((row) => doesMatchSearch(row, cleaned))
+      : venueSearchScopeRows;
+    return base.slice(0, 10);
+  }, [venueSearchScopeRows, searchInput]);
 
   const filteredRows = useMemo(() => {
     if (!selectedFilters) return [];
@@ -409,6 +539,25 @@ export default function Dashboard() {
       inactiveSeatCapacity: sumBy(inactiveRows, (row) => row.venueMaxCapacity),
     };
   }, [filteredRows, inactiveRows]);
+
+  const manpowerSnapshotOverview = useMemo(() => {
+    const overview = manpowerSnapshot?.overview || {};
+    return {
+      manpower: Number(overview.manpower || 0),
+      projects: Number(overview.projects || 0),
+      drives: Number(overview.drives || 0),
+      venueCount: Number(overview.venueCount || 0),
+      totalBatches: Number(overview.totalBatches || 0),
+      noBatchDelay: Number(overview.noBatchDelay || 0),
+      callLogs: Number(overview.callLogs || 0),
+      ffa: Number(overview.ffa || 0),
+    };
+  }, [manpowerSnapshot]);
+
+  const manpowerSnapshotProjectRows = useMemo(() => {
+    const rows = Array.isArray(manpowerSnapshot?.projectSummary) ? manpowerSnapshot.projectSummary : [];
+    return rows.slice(0, 8);
+  }, [manpowerSnapshot]);
 
   const categoryPieData = useMemo(() => {
     const total = filteredRows.length;
@@ -547,6 +696,36 @@ export default function Dashboard() {
     };
   }, [regionSummaries]);
 
+  const categoryExecutiveInsights = useMemo(() => {
+    const total = Number(categoryTotals.grand || 0);
+    if (!total) return [];
+
+    const countsByCategory = {
+      A: Number(categoryTotals.A || 0),
+      B: Number(categoryTotals.B || 0),
+      C: Number(categoryTotals.C || 0),
+      "BL-C": Number(categoryTotals.BLC || 0),
+      BL: Number(categoryTotals.BL || 0),
+    };
+
+    const dominant = Object.entries(countsByCategory).sort((left, right) => right[1] - left[1])[0];
+    const dominantCategory = dominant?.[0] || "A";
+    const dominantCount = Number(dominant?.[1] || 0);
+    const dominantShare = percent(dominantCount, total);
+
+    const qualityCount = countsByCategory.A + countsByCategory.B;
+    const qualityShare = percent(qualityCount, total);
+    const riskCount = countsByCategory["BL-C"] + countsByCategory.BL;
+    const riskShare = percent(riskCount, total);
+    const cShare = percent(countsByCategory.C, total);
+
+    return [
+      `Dominant: ${dominantCategory} (${dominantShare}%, ${formatCount(dominantCount)} venues).`,
+      `Ready pool (A+B): ${qualityShare}% | Watchlist (BL+BL-C): ${riskShare}%.`,
+      `Upgrade bucket (C): ${cShare}% (${formatCount(countsByCategory.C)} venues).`,
+    ];
+  }, [categoryTotals]);
+
   const distributionTotals = useMemo(() => {
     return {
       datcCount: sumBy(regionSummaries, (item) => item.datcCount),
@@ -590,8 +769,15 @@ export default function Dashboard() {
       state: [...filterOptions.state],
       district: [...filterOptions.district],
       city: [...filterOptions.city],
+      examCityCentre: [...filterOptions.examCityCentre],
       status: [...filterOptions.status],
       category: [...filterOptions.category],
+      venueType: [...filterOptions.venueType],
+      projectName: [],
+      projectMonth: [],
+      examWise: [],
+      roles: [],
+      documents: [],
     });
     setTopFilters({ region: "", state: "", examCityCentre: "" });
     setSearchInput("");
@@ -620,6 +806,94 @@ export default function Dashboard() {
     }
     setTopFilters((prev) => ({ ...prev, [key]: value }));
   };
+
+  const globalModuleEntries = useMemo(
+    () => [
+      {
+        id: "module-dashboard",
+        title: "Venue Dashboard",
+        subtitle: "Open main venue analytics dashboard",
+        keywords: "dashboard venue analysis home",
+        onSelect: () => goTo("dashboard"),
+      },
+      {
+        id: "module-manpower",
+        title: "Manpower Details",
+        subtitle: "Open manpower analytics module",
+        keywords: "manpower staffing roles documents",
+        onSelect: () => goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] }),
+      },
+      {
+        id: "module-datc-dotc",
+        title: "DATC & DOTC Inventory",
+        subtitle: "Open DATC/DOTC inventory dashboard",
+        keywords: "datc dotc inventory city centres seats",
+        onSelect: () => goTo("city_datc_dotc", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] }),
+      },
+      {
+        id: "module-master-map",
+        title: "Master Coverage Map",
+        subtitle: "Open India state coverage map",
+        keywords: "map coverage state india geography",
+        onSelect: () => goTo("master_map", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] }),
+      },
+      {
+        id: "module-master-data",
+        title: "Manage Master Data",
+        subtitle: "Open master records section",
+        keywords: "master data records admin",
+        onSelect: () => goTo("main", { requiresAuth: true }),
+      },
+      {
+        id: "module-process",
+        title: "Process Analysis Engine",
+        subtitle: "Open process analysis module",
+        keywords: "process analysis engine pipeline",
+        onSelect: () => goTo("process", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] }),
+      },
+    ],
+    [goTo],
+  );
+
+  const resolveGlobalSearchResults = useCallback((input) => {
+    const query = String(input || "").trim().toLowerCase();
+    if (!query) return [];
+
+    const moduleMatches = globalModuleEntries
+      .filter((entry) => `${entry.title} ${entry.subtitle} ${entry.keywords}`.toLowerCase().includes(query))
+      .map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        subtitle: entry.subtitle,
+        onSelect: entry.onSelect,
+      }));
+
+    const venueMatches = rows
+      .filter((row) => doesMatchSearch(row, query))
+      .slice(0, 8)
+      .map((row) => ({
+        id: `venue-${row.dmsCode}`,
+        title: `${row.name || "Unnamed Venue"} (${row.dmsCode})`,
+        subtitle: `${row.city || "-"}, ${row.state || "-"} | ${row.venueType || "-"} | ${row.status || "-"}`,
+        onSelect: () => openVenueDetail(row.dmsCode),
+      }));
+
+    const stateMatches = uniqueSorted(rows.map((row) => row.state))
+      .filter((state) => state.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map((state) => ({
+        id: `state-${state}`,
+        title: `State Focus: ${state}`,
+        subtitle: "Apply dashboard filter to this state",
+        onSelect: () => {
+          setTopFilters({ region: "", state, examCityCentre: "" });
+          setSearchInput("");
+          setSearchQuery("");
+        },
+      }));
+
+    return [...moduleMatches, ...venueMatches, ...stateMatches].slice(0, 12);
+  }, [globalModuleEntries, openVenueDetail, rows]);
 
   const renderClickable = (val, onClick) => (
     <span className="clickable-cell" onClick={onClick}>
@@ -828,16 +1102,12 @@ export default function Dashboard() {
         onSelectAll={handleSelectAll}
         onClearAll={handleClearAll}
         onResetAll={handleResetAll}
+        globalSearchConfig={{
+          placeholder: "Search module, venue, DMS, city, state...",
+          resolve: resolveGlobalSearchResults,
+        }}
         mobileOpen={mobileSidebarOpen}
         onToggleMobile={() => setMobileSidebarOpen((prev) => !prev)}
-        venueSearchConfig={{
-          input: searchInput,
-          query: searchQuery,
-          onInputChange: setSearchInput,
-          onSearch: handleSearch,
-          results: rowsWithoutStatusFilter,
-          placeholder: "e.g. AP COMPUTER POINT or EST-AR-1161 or ITANAGAR...",
-        }}
       />
 
       <button
@@ -855,14 +1125,78 @@ export default function Dashboard() {
           <ChevronsRight size={20} />
         </button>
 
-        <div className="dash-header">
-          <h1 className="dash-title">Venue Analysis Dashboard</h1>
-          <div className="dash-logo">
-            <img src="/logo.png" alt="DEXIT Global" className="dash-logo-img" />
+        <div className="dashboard-top-shell">
+          <div className="dash-header">
+            <div className="dash-title-block">
+              <h1 className="dash-title">Venue Analysis Dashboard</h1>
+              <p className="dash-subtitle">Live venue intelligence with drilldown analytics</p>
+              <div className="perspective-switch" role="tablist" aria-label="Dashboard perspective switch">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activePerspective === "venue"}
+                  className={`perspective-btn ${activePerspective === "venue" ? "active" : ""}`}
+                  onClick={() => switchPerspective("venue")}
+                >
+                  Venue Perspective
+                </button>
+                {canViewUnifiedManpower ? (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activePerspective === "manpower"}
+                    className={`perspective-btn ${activePerspective === "manpower" ? "active" : ""}`}
+                    onClick={() => switchPerspective("manpower")}
+                  >
+                    Manpower Perspective
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div className="dash-logo">
+              <img src="/logo.png" alt="DEXIT Global" className="dash-logo-img" />
+            </div>
           </div>
-        </div>
 
-        <div className="kpi-row kpi-row-dashboard">
+          <div className="search-card dashboard-venue-search">
+            <div className="search-title">Venue Search</div>
+            <div className="search-desc">Search by venue name, DMS code, city, district or state.</div>
+            <div className="search-flex">
+              <input
+                className="search-input"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") handleSearch();
+                }}
+                placeholder="e.g. AP COMPUTER POINT or EST-AR-1161 or ITANAGAR..."
+              />
+              <button className="search-btn" onClick={handleSearch}>Search Venue</button>
+            </div>
+            {searchInput.trim() ? (
+              <div className="search-result-list dashboard-venue-search-results">
+                {venueSearchResults.length ? (
+                  venueSearchResults.map((row) => (
+                    <div className="search-result-row" key={`venue-result-${row.dmsCode}`}>
+                      <div>
+                        <div className="result-main">{row.name || "-"}</div>
+                        <div className="result-sub">
+                          {row.dmsCode} | {row.city || "-"}, {row.state || "-"} | {row.status || "-"}
+                        </div>
+                      </div>
+                      <button className="btn-outline search-result-btn" onClick={() => openVenueDetail(row.dmsCode)}>
+                        Open
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="search-empty">No venue matches found.</div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="kpi-row kpi-row-dashboard" id="venue-perspective-section" ref={venuePerspectiveRef}>
           {KPI_CARDS.map((card) => {
             const val = kpis[card.key];
             const isBlacklisted = card.key === "blacklisted" || card.key === "blacklistedSeatCapacity";
@@ -872,7 +1206,7 @@ export default function Dashboard() {
             return (
               <button
                 key={card.key}
-                data-tooltip="Click here for details"
+                data-tooltip="View details"
                 className={`kpi-box with-view kpi-clickable${drilldownPath.key === card.key ? " kpi-active" : ""}${severityClass}`}
                 style={{ "--kpi-accent": card.color }}
                 onClick={() => {
@@ -886,12 +1220,76 @@ export default function Dashboard() {
               >
                 <div className="kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
                 <div className="kpi-val">{formatCount(val)}</div>
-                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "▲ Close" : "▼ Details"}</div>
+                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "View details"}</div>
               </button>
             );
           })}
+          </div>
         </div>
 
+        {canViewUnifiedManpower ? (
+          <section className="unified-perspective-section" id="manpower-perspective-section" ref={manpowerPerspectiveRef}>
+            <div className="unified-perspective-head">
+              <h3 className="section-title">Unified View: Manpower Perspective</h3>
+              <button
+                className="mp-action-btn mp-action-btn-primary"
+                onClick={() => goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS })}
+              >
+                Open Detailed Manpower Analytics
+              </button>
+            </div>
+            {manpowerSnapshotError ? <div className="inline-error">{manpowerSnapshotError}</div> : null}
+            {manpowerSnapshotBusy ? (
+              <div className="photo-placeholder" style={{ height: "auto", padding: "18px", borderStyle: "dashed" }}>
+                Loading manpower perspective...
+              </div>
+            ) : (
+              <>
+                <div className="unified-perspective-kpis">
+                  <div className="unified-perspective-kpi"><span>Manpower</span><strong>{formatCount(manpowerSnapshotOverview.manpower)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>Projects</span><strong>{formatCount(manpowerSnapshotOverview.projects)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>Drives</span><strong>{formatCount(manpowerSnapshotOverview.drives)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>Venue Count</span><strong>{formatCount(manpowerSnapshotOverview.venueCount)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>Total Batches</span><strong>{formatCount(manpowerSnapshotOverview.totalBatches)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>No Delay</span><strong>{formatCount(manpowerSnapshotOverview.noBatchDelay)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>Call Logs</span><strong>{formatCount(manpowerSnapshotOverview.callLogs)}</strong></div>
+                  <div className="unified-perspective-kpi"><span>FFA</span><strong>{formatCount(manpowerSnapshotOverview.ffa)}</strong></div>
+                </div>
+
+                <div className="table-wrap" style={{ marginTop: "10px" }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Project</th>
+                        <th>Drive Count</th>
+                        <th>Unique Manpower</th>
+                        <th>No Delay</th>
+                        <th>Call Logs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {manpowerSnapshotProjectRows.length ? (
+                        manpowerSnapshotProjectRows.map((row, idx) => (
+                          <tr key={`unified-mp-project-${row.projectName}-${idx}`}>
+                            <td><strong>{row.projectName || "-"}</strong></td>
+                            <td>{formatCount(row.driveCount || 0)}</td>
+                            <td>{formatCount(row.uniqueManpower || 0)}</td>
+                            <td>{formatCount(row.noBatchDelay || 0)}</td>
+                            <td>{formatCount(row.callLogs || 0)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5}>No manpower project snapshot found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        ) : null}
 
 
 
@@ -1023,10 +1421,10 @@ export default function Dashboard() {
             <h3>
               Category Distribution
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-                (Interactive: Click on any segment to drill down)
+                (Interactive: Click any segment to drill down)
               </span>
             </h3>
-            <div className="chart-container">
+            <div className="chart-container chart-container--category">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -1039,6 +1437,8 @@ export default function Dashboard() {
                     outerRadius={105}
                     paddingAngle={2}
                     stroke="none"
+                    labelLine={{ stroke: "#b7c8dc", strokeWidth: 1 }}
+                    label={renderCategoryPieLabel}
                     onClick={(data) => {
                       if (data && data.name) {
                         setDrilldownPath({ type: "category", key: data.name, region: null, state: null, district: null, city: null });
@@ -1060,22 +1460,30 @@ export default function Dashboard() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="chart-insight-card">
-              {categoryPieData.map((item) => (
-                <div key={item.name} className="chart-insight-pill">
-                  <span className="chart-insight-dot" style={{ backgroundColor: PIE_COLORS[item.name] || "#cbd5e1" }} />
-                  <span className="chart-insight-pill-key">{item.name}</span>
-                  <span className="chart-insight-pill-value">{item.percent}%</span>
-                </div>
+            <div className="category-meaning-compact">
+              {PIE_ORDER.filter((category) => categoryPieData.some((item) => item.name === category)).map((category) => (
+                <span key={`category-meaning-${category}`} className="category-meaning-chip">
+                  <strong>{category}</strong>: {CATEGORY_MEANINGS[category]}
+                </span>
               ))}
             </div>
+            {categoryExecutiveInsights.length ? (
+              <div className="chart-insight-exec">
+                <div className="chart-insight-exec-title">Category Insights</div>
+                <ul className="chart-insight-exec-list">
+                  {categoryExecutiveInsights.map((line, index) => (
+                    <li key={`category-insight-${index}`}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <div className="chart-col">
             <h3>
               Infrastructure Readiness Index
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-                (Interactive: Click on any point to drill down)
+                (Interactive: Click any point to drill down)
               </span>
             </h3>
             <div className="chart-container">
@@ -1110,20 +1518,20 @@ export default function Dashboard() {
                   />
                 </RadarChart>
               </ResponsiveContainer>
-              <div className="chart-insight-card chart-insight-card--stacked">
-                {infraData.map((item) => {
-                  const level = item.value < 50 ? "critical" : item.value < 75 ? "warning" : "healthy";
-                  return (
-                    <div key={item.subject} className={`chart-insight-row chart-insight-row--${level}`}>
-                      <span className="chart-insight-row-label">
-                        <span className={`chart-insight-dot chart-insight-dot--${level}`} />
-                        {item.subject}
-                      </span>
-                      <span className="chart-insight-row-value">{item.value}%</span>
-                    </div>
-                  );
-                })}
-              </div>
+            </div>
+            <div className="chart-insight-card chart-insight-card--stacked">
+              {infraData.map((item) => {
+                const level = item.value < 50 ? "critical" : item.value < 75 ? "warning" : "healthy";
+                return (
+                  <div key={item.subject} className={`chart-insight-row chart-insight-row--${level}`}>
+                    <span className="chart-insight-row-label">
+                      <span className={`chart-insight-dot chart-insight-dot--${level}`} />
+                      {item.subject}
+                    </span>
+                    <span className="chart-insight-row-value">{item.value}%</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1131,10 +1539,10 @@ export default function Dashboard() {
             <h3>
               India Coverage Map
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-                (Interactive: Click on a state to open Master Map)
+                (Interactive: Click a state to open Master Map)
               </span>
             </h3>
-            <div className="chart-container map-holder" style={{ minHeight: "320px" }}>
+            <div className="chart-container map-holder">
               <IndiaMap
                 data={stateCounts}
                 onStateClick={(stateName) => {
@@ -1168,20 +1576,33 @@ export default function Dashboard() {
 
         <div className="section-full">
           <h3>
-            Region-wise Status Distribution
+            Region-Wise Status Distribution
             <span style={{ display: 'block', fontSize: '12px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-              (Interactive: Click on any bar section to drill down)
+              (Interactive: Click any bar section to drill down)
             </span>
           </h3>
           <div className="flex-table-row">
             <div className="half-col">
+              <div className="chart-legend-row chart-legend-row--status">
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: STATUS_COLORS.ACTIVE }} />
+                  ACTIVE
+                </span>
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: STATUS_COLORS.BLACKLISTED }} />
+                  BLACKLISTED
+                </span>
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: STATUS_COLORS["CUSTOMER SPECIFIC BLACKLISTED"] }} />
+                  CUSTOMER_SPECIFIC_BLACKLISTED
+                </span>
+              </div>
               <ResponsiveContainer width="100%" height={330}>
-                <BarChart data={statusChartData}>
+                <BarChart data={statusChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Legend verticalAlign="top" iconType="square" />
                   <Bar
                     dataKey="ACTIVE"
                     fill={STATUS_COLORS.ACTIVE}
@@ -1242,20 +1663,33 @@ export default function Dashboard() {
 
         <div className="section-full">
           <h3>
-            Region-wise Category Breakdown
+            Region-Wise Category Breakdown
             <span style={{ display: 'block', fontSize: '12px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-              (Interactive: Click on any bar section to drill down)
+              (Interactive: Click any bar section to drill down)
             </span>
           </h3>
           <div className="flex-table-row">
             <div className="half-col">
+              <div className="chart-legend-row">
+                {[
+                  { key: "A", color: CATEGORY_COLORS.A },
+                  { key: "B", color: CATEGORY_COLORS.B },
+                  { key: "C", color: CATEGORY_COLORS.C },
+                  { key: "BL-C", color: CATEGORY_COLORS["BL-C"] },
+                  { key: "BL", color: CATEGORY_COLORS.BL },
+                ].map((item) => (
+                  <span className="chart-legend-item" key={`cat-legend-${item.key}`}>
+                    <span className="chart-legend-swatch" style={{ background: item.color }} />
+                    {item.key}
+                  </span>
+                ))}
+              </div>
               <ResponsiveContainer width="100%" height={330}>
-                <BarChart data={categoryChartData}>
+                <BarChart data={categoryChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Legend verticalAlign="top" iconType="square" />
                   <Bar
                     dataKey="A"
                     fill={CATEGORY_COLORS.A}
@@ -1334,17 +1768,26 @@ export default function Dashboard() {
         </div>
 
         <div className="section-full">
-          <h3>Region-wise Distribution</h3>
+          <h3>Region-Wise Distribution</h3>
           <div className="col-2-grid">
             <div>
               <div className="chart-title">Venue Count Distribution</div>
+              <div className="chart-legend-row">
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: "#3f7fdd" }} />
+                  DATC
+                </span>
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: "#7d58e2" }} />
+                  DOTC
+                </span>
+              </div>
               <ResponsiveContainer width="100%" height={330}>
-                <BarChart data={distributionCountData}>
+                <BarChart data={distributionCountData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Legend verticalAlign="top" iconType="square" />
                   <Bar dataKey="DATC" fill="#3f7fdd">
                     <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
@@ -1356,13 +1799,22 @@ export default function Dashboard() {
             </div>
             <div>
               <div className="chart-title">Total Seat Capacity</div>
+              <div className="chart-legend-row">
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: "#3f7fdd" }} />
+                  DATC
+                </span>
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: "#7d58e2" }} />
+                  DOTC
+                </span>
+              </div>
               <ResponsiveContainer width="100%" height={330}>
-                <BarChart data={distributionCapacityData}>
+                <BarChart data={distributionCapacityData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Legend verticalAlign="top" iconType="square" />
                   <Bar dataKey="DATC" fill="#3f7fdd">
                     <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
@@ -1429,6 +1881,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 

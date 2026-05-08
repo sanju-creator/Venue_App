@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import Sidebar from "@/components/Sidebar";
 import { useApp } from "@/context/AppContext";
 
 const TABS = [
-  { key: "city", label: "City-wise" },
-  { key: "district", label: "District-wise" },
-  { key: "state", label: "State-wise" },
-  { key: "region", label: "Region-wise" },
+  { key: "city", label: "City-Wise" },
+  { key: "district", label: "District-Wise" },
+  { key: "state", label: "State-Wise" },
+  { key: "region", label: "Region-Wise" },
 ];
 
 function PivotTable({ rows }) {
@@ -99,9 +99,9 @@ export default function CityDatcDotcPage() {
       <Sidebar />
       <main className="main-content">
         <div className="dash-header">
-          <h1 className="dash-title">DATC & DOTC Inventory Summary</h1>
+          <h1 className="dash-title">DATC & DOTC Inventory Dashboard</h1>
           <button className="btn-outline" style={{ width: 220 }} onClick={() => goTo("dashboard")}>
-            Back To Dashboard
+            Back to Dashboard
           </button>
         </div>
 
@@ -129,9 +129,9 @@ export default function CityDatcDotcPage() {
 
         {data?.kpis ? (
           <div className="kpi-row kpi-row-3">
-            <div className="kpi-box kpi-clickable" data-tooltip="Click here for details"><div className="kpi-title">Total Venues</div><div className="kpi-val">{data.kpis.totalVenues}</div></div>
-            <div className="kpi-box kpi-clickable" data-tooltip="Click here for details"><div className="kpi-title">DATC</div><div className="kpi-val">{data.kpis.totalDATC}</div></div>
-            <div className="kpi-box kpi-clickable" data-tooltip="Click here for details"><div className="kpi-title">DOTC</div><div className="kpi-val">{data.kpis.totalDOTC}</div></div>
+            <div className="kpi-box kpi-clickable" data-tooltip="View details"><div className="kpi-title">Total Venues</div><div className="kpi-val">{data.kpis.totalVenues}</div></div>
+            <div className="kpi-box kpi-clickable" data-tooltip="View details"><div className="kpi-title">DATC</div><div className="kpi-val">{data.kpis.totalDATC}</div></div>
+            <div className="kpi-box kpi-clickable" data-tooltip="View details"><div className="kpi-title">DOTC</div><div className="kpi-val">{data.kpis.totalDOTC}</div></div>
           </div>
         ) : null}
 
@@ -145,14 +145,23 @@ export default function CityDatcDotcPage() {
 
         <div className="section-full">
           <h3>{TABS.find((item) => item.key === tab)?.label} DATC vs DOTC</h3>
+          <div className="chart-legend-row">
+            <span className="chart-legend-item">
+              <span className="chart-legend-swatch" style={{ background: "#3f7fdd" }} />
+              DATC
+            </span>
+            <span className="chart-legend-item">
+              <span className="chart-legend-swatch" style={{ background: "#7d58e2" }} />
+              DOTC
+            </span>
+          </div>
           <div className="chart-container">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
+              <BarChart data={chartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend />
                 <Bar dataKey="DATC" fill="#3f7fdd" />
                 <Bar dataKey="DOTC" fill="#7d58e2" />
               </BarChart>

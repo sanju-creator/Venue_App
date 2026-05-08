@@ -36,6 +36,13 @@ function normalizeToken(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizePersonKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
 function hasProject(projectsText, projectName) {
   const target = normalizeToken(projectName);
   if (!target) return false;
@@ -52,7 +59,7 @@ function getSourceHost(url) {
 
 
 export default function VenueDetailPage() {
-  const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo, API } = useApp();
+  const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo, API, setManpowerFilter, openVenueDetail } = useApp();
   const [searchCode, setSearchCode] = useState(selectedVenueCode || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -74,8 +81,16 @@ export default function VenueDetailPage() {
   const [currentVenueDrillKey, setCurrentVenueDrillKey] = useState("");
   const [currentVenueDeepDetail, setCurrentVenueDeepDetail] = useState(null);
   const [selectedProjectKey, setSelectedProjectKey] = useState("");
+  const [projectDrilldown, setProjectDrilldown] = useState(null);
+  const [projectDrilldownBusy, setProjectDrilldownBusy] = useState(false);
+  const [projectDrilldownError, setProjectDrilldownError] = useState("");
+  const [projectDrillLevel, setProjectDrillLevel] = useState("venues");
+  const [selectedProjectVenueCode, setSelectedProjectVenueCode] = useState("");
+  const [projectVenueSortBy, setProjectVenueSortBy] = useState("score_desc");
+  const [projectPeopleSortBy, setProjectPeopleSortBy] = useState("score_desc");
   const currentVenueInfoRef = useRef(null);
   const isMountedRef = useRef(false);
+  const autoResearchRequestedRef = useRef(new Set());
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -83,6 +98,48 @@ export default function VenueDetailPage() {
       isMountedRef.current = false;
     };
   }, []);
+
+  const activePhotoIndex = useMemo(() => {
+    if (!photos.length || !activePhoto) return -1;
+    return photos.findIndex((photo) => photo === activePhoto);
+  }, [photos, activePhoto]);
+
+  const hasMultiplePhotos = photos.length > 1;
+
+  const goToPrevPhoto = useCallback(() => {
+    if (!hasMultiplePhotos || activePhotoIndex < 0) return;
+    const prevIndex = (activePhotoIndex - 1 + photos.length) % photos.length;
+    setActivePhoto(photos[prevIndex]);
+  }, [hasMultiplePhotos, activePhotoIndex, photos]);
+
+  const goToNextPhoto = useCallback(() => {
+    if (!hasMultiplePhotos || activePhotoIndex < 0) return;
+    const nextIndex = (activePhotoIndex + 1) % photos.length;
+    setActivePhoto(photos[nextIndex]);
+  }, [hasMultiplePhotos, activePhotoIndex, photos]);
+
+  const currentVenueCode = useMemo(
+    () =>
+      normalizeDms(
+        selectedVenueCode || venue?.dms_code || venue?.dmsCode || venue?.venue_code || venue?.code || "",
+      ),
+    [selectedVenueCode, venue],
+  );
+
+  const refreshMarketResearch = useCallback(async () => {
+    if (!currentVenueCode || !isMountedRef.current) return;
+    try {
+      const data = await fetchApi(`venue/${encodeURIComponent(currentVenueCode)}/market-research`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!isMountedRef.current) return;
+      setMarketResearch(data?.marketResearch || null);
+    } catch {
+      // Keep existing data if internet refresh fails.
+    }
+  }, [currentVenueCode, fetchApi]);
 
   const loadVenue = async (code) => {
     const clean = String(code || "").trim();
@@ -97,6 +154,13 @@ export default function VenueDetailPage() {
     setCurrentVenueDrillKey("");
     setCurrentVenueDeepDetail(null);
     setSelectedProjectKey("");
+    setProjectDrilldown(null);
+    setProjectDrilldownBusy(false);
+    setProjectDrilldownError("");
+    setProjectDrillLevel("venues");
+    setSelectedProjectVenueCode("");
+    setProjectVenueSortBy("score_desc");
+    setProjectPeopleSortBy("score_desc");
     setPersonData(null);
     try {
       const data = await fetchApi(`venue/${encodeURIComponent(clean)}/detail`);
@@ -160,6 +224,88 @@ export default function VenueDetailPage() {
     }
   }, [fetchApi]);
 
+  const manpowerByEmpId = useMemo(() => {
+    const map = new Map();
+    (manpower || []).forEach((person) => {
+      const empId = String(person?.empId || "").trim();
+      if (!empId || map.has(empId)) return;
+      map.set(empId, person);
+    });
+    return map;
+  }, [manpower]);
+
+  const manpowerByNameKey = useMemo(() => {
+    const map = new Map();
+    (manpower || []).forEach((person) => {
+      const key = normalizePersonKey(person?.name);
+      if (!key || map.has(key)) return;
+      map.set(key, person);
+    });
+    return map;
+  }, [manpower]);
+
+  const resolvePersonForProfile = useCallback((name, empId = "") => {
+    const cleanEmpId = String(empId || "").trim();
+    if (cleanEmpId && manpowerByEmpId.has(cleanEmpId)) {
+      return manpowerByEmpId.get(cleanEmpId);
+    }
+
+    const nameKey = normalizePersonKey(name);
+    if (!nameKey) return null;
+
+    const exactByName = manpowerByNameKey.get(nameKey);
+    if (exactByName) return exactByName;
+
+    const fuzzy = (manpower || []).find((person) => {
+      const candidate = normalizePersonKey(person?.name);
+      return candidate && (candidate.includes(nameKey) || nameKey.includes(candidate));
+    });
+
+    return fuzzy || null;
+  }, [manpower, manpowerByEmpId, manpowerByNameKey]);
+
+  const openPersonDetail = useCallback(async (name, empId = "") => {
+    const cleanName = String(name || "").trim();
+    const cleanEmpId = String(empId || "").trim();
+    const matchedPerson = resolvePersonForProfile(name, empId);
+    const openManpowerPageForPerson = (resolvedEmpId = "", resolvedName = cleanName) => {
+      const searchToken = String(resolvedEmpId || resolvedName || "").trim();
+      if (!searchToken) return;
+      setManpowerFilter({
+        search: searchToken,
+        dmsCode: currentVenueCode || "",
+        focusEmpId: String(resolvedEmpId || "").trim(),
+        personName: String(resolvedName || "").trim(),
+      });
+      goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] });
+    };
+
+    if (matchedPerson?.empId) {
+      openManpowerPageForPerson(matchedPerson.empId, matchedPerson.name || cleanName);
+      return;
+    }
+    if (cleanEmpId) {
+      openManpowerPageForPerson(cleanEmpId, cleanName || cleanEmpId);
+      return;
+    }
+    if (!cleanName) return;
+    try {
+      const query = new URLSearchParams({
+        name: cleanName,
+        dmsCode: currentVenueCode || "",
+      });
+      const lookup = await fetchApi(`manpower/person-lookup?${query.toString()}`);
+      const resolvedEmpId = String(lookup?.empId || "").trim();
+      if (resolvedEmpId) {
+        openManpowerPageForPerson(resolvedEmpId, lookup?.name || cleanName);
+        return;
+      }
+      setPersonError(`Profile not found for ${cleanName}.`);
+    } catch {
+      setPersonError(`Profile not found for ${cleanName}.`);
+    }
+  }, [currentVenueCode, fetchApi, goTo, resolvePersonForProfile, setManpowerFilter]);
+
   const closeProfileModal = useCallback(() => {
     setShowProfileModal(false);
     setProfileMaximized(false);
@@ -183,12 +329,31 @@ export default function VenueDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVenueCode]);
 
+  useEffect(() => {
+    if (!venue || !currentVenueCode || !marketResearch) return;
+    const hasSources = Array.isArray(marketResearch.sources) && marketResearch.sources.length > 0;
+    if (hasSources) return;
+    if (autoResearchRequestedRef.current.has(currentVenueCode)) return;
+    autoResearchRequestedRef.current.add(currentVenueCode);
+    refreshMarketResearch();
+  }, [venue, currentVenueCode, marketResearch, refreshMarketResearch]);
+
   const statusColor = useMemo(() => {
     const status = pretty(venue?.status).toUpperCase();
     if (status === "ACTIVE") return "#16a34a";
     if (status.includes("BLACKLIST")) return "#dc2626";
     return "#64748b";
   }, [venue]);
+
+  const venueSpocPerson = useMemo(
+    () => resolvePersonForProfile(venue?.venue_spoc_name, venue?.venue_spoc_emp_id),
+    [resolvePersonForProfile, venue?.venue_spoc_name, venue?.venue_spoc_emp_id],
+  );
+
+  const channelManagerPerson = useMemo(
+    () => resolvePersonForProfile(venue?.channel_manager_name, venue?.channel_manager_emp_id),
+    [resolvePersonForProfile, venue?.channel_manager_name, venue?.channel_manager_emp_id],
+  );
 
   const selectedVenueSummary = useMemo(() => {
     if (!selectedManpower) return null;
@@ -376,10 +541,235 @@ export default function VenueDetailPage() {
     };
   }, [manpower]);
 
+  const marketExecutiveBrief = useMemo(() => {
+    if (!venue && !marketResearch) return null;
+    const sanitize = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+    const yesNo = (value) => sanitize(value).toUpperCase() === "YES";
+    const venueName = sanitize(marketResearch?.venueName || venue?.venue_name || venue?.name || "Selected Venue");
+    const city = sanitize(venue?.city);
+    const state = sanitize(venue?.state);
+    const location = [city, state].filter(Boolean).join(", ");
+    const status = sanitize(venue?.status || marketResearch?.status || "Unknown");
+    const confidence = sanitize(marketResearch?.confidence || "Low");
+    const capacity = sanitize(venue?.venue_max_capacity);
+    const category = sanitize(venue?.category);
+
+    const infraFlags = [
+      { label: "CCTV", ok: yesNo(venue?.cctv) },
+      { label: "UPS", ok: yesNo(venue?.ups_availability) },
+      { label: "Genset", ok: yesNo(venue?.genset_availability) },
+      { label: "PWD Access", ok: yesNo(venue?.pwd_venue) },
+    ];
+    const infraReadyCount = infraFlags.filter((item) => item.ok).length;
+    const infraTotal = infraFlags.length;
+
+    const sources = Array.isArray(marketResearch?.sources) ? marketResearch.sources : [];
+    const sourceCount = sources.length;
+    const topDomains = Array.from(
+      new Set(
+        sources
+          .map((item) => sanitize(getSourceHost(item?.url || "")))
+          .filter(Boolean),
+      ),
+    ).slice(0, 4);
+
+    const recommendation =
+      confidence.toLowerCase() === "high"
+        ? "Proceed with planning review, while keeping final scheduling contingent on current on-ground readiness checks."
+        : "Treat this as a preliminary assessment and complete operational due diligence before any final commitment.";
+
+    return {
+      title: `${venueName}${location ? ` (${location})` : ""}`,
+      paragraph: `${venueName} is currently assessed as ${status || "operationally unclassified"} with ${confidence.toLowerCase()} confidence based on available public references and internal profile data.`,
+      highlights: [
+        `External validation coverage: ${sourceCount} public source${sourceCount === 1 ? "" : "s"}${topDomains.length ? ` (${topDomains.join(", ")})` : ""}.`,
+        `Internal readiness snapshot: ${infraReadyCount}/${infraTotal} key infra controls marked available (${infraFlags.map((f) => `${f.label}: ${f.ok ? "Yes" : "No"}`).join(", ")}).`,
+        `Capacity profile: ${capacity || "Not reported"} seats${category ? ` | Category ${category}` : ""}.`,
+        `Assessment confidence: ${confidence}.`,
+      ],
+      recommendation,
+      status,
+      confidence,
+      updatedAt: sanitize(marketResearch?.lastResearchedAt),
+    };
+  }, [marketResearch, venue]);
+
   const selectedProjectReport = useMemo(() => {
     if (!selectedProjectKey) return null;
     return projectReportData.byKey.get(selectedProjectKey) || null;
   }, [selectedProjectKey, projectReportData]);
+
+  useEffect(() => {
+    const loadProjectDrilldown = async () => {
+      if (!selectedProjectReport?.project) {
+        setProjectDrilldown(null);
+        setProjectDrilldownError("");
+        setProjectDrilldownBusy(false);
+        setSelectedProjectVenueCode("");
+        setProjectDrillLevel("venues");
+        return;
+      }
+      setProjectDrilldownBusy(true);
+      setProjectDrilldownError("");
+      try {
+        const query = new URLSearchParams({
+          project: selectedProjectReport.project,
+          venueCode: currentVenueCode || "",
+        });
+        const data = await fetchApi(`manpower/project-drilldown?${query.toString()}`);
+        if (!isMountedRef.current) return;
+        setProjectDrilldown(data || null);
+        const currentVenueMatch = (data?.venues || []).find((row) => row.isCurrentVenue);
+        setSelectedProjectVenueCode(currentVenueMatch?.dmsCode || "");
+        setProjectDrillLevel("venues");
+      } catch (err) {
+        if (!isMountedRef.current) return;
+        setProjectDrilldown(null);
+        const rawMessage = err?.message || "";
+        if (rawMessage.includes("(404)")) {
+          setProjectDrilldownError("Live project drill-down API not available (404). Showing current venue snapshot.");
+        } else {
+          setProjectDrilldownError(rawMessage || "Failed to load project drill-down.");
+        }
+      } finally {
+        if (isMountedRef.current) setProjectDrilldownBusy(false);
+      }
+    };
+    loadProjectDrilldown();
+  }, [selectedProjectReport, currentVenueCode, fetchApi]);
+
+  const projectVenueRows = useMemo(() => {
+    if (Array.isArray(projectDrilldown?.venues) && projectDrilldown.venues.length) return projectDrilldown.venues;
+    if (!selectedProjectReport) return [];
+    return [{
+      dmsCode: selectedVenueSummary?.dmsCode || currentVenueCode || "-",
+      venueName: selectedVenueSummary?.venueName || pretty(venue?.venue_name || venue?.name),
+      category: selectedVenueSummary?.category || pretty(venue?.category || "-"),
+      region: selectedVenueSummary?.region || pretty(venue?.region || "-"),
+      state: selectedVenueSummary?.state || pretty(venue?.state || "-"),
+      district: selectedVenueSummary?.district || pretty(venue?.district || "-"),
+      city: selectedVenueSummary?.city || pretty(venue?.city || "-"),
+      peopleCount: selectedProjectReport.memberCount || 0,
+      roleCount: selectedProjectReport.roles?.length || 0,
+      totalBatches: selectedProjectReport.totalInstances || 0,
+      fullBatchDelay: 0,
+      partialBatchDelay: 0,
+      noDelay: selectedProjectReport.totalInstances || 0,
+      ffa: 0,
+      callLogs: selectedProjectReport.totalCallLogs || 0,
+      score: 0,
+      isCurrentVenue: true,
+    }];
+  }, [projectDrilldown, selectedProjectReport, selectedVenueSummary, currentVenueCode, venue]);
+
+  const projectPeopleRows = useMemo(() => {
+    if (Array.isArray(projectDrilldown?.people) && projectDrilldown.people.length) {
+      let rows = projectDrilldown.people;
+      if (selectedProjectVenueCode) {
+        rows = rows.filter((row) =>
+          Array.isArray(row.venueCodes) && row.venueCodes.some((code) => normalizeDms(code) === normalizeDms(selectedProjectVenueCode)),
+        );
+      }
+      return rows;
+    }
+    if (!selectedProjectReport) return [];
+    return selectedProjectReport.members.map((member) => ({
+      personName: member.person,
+      empId: member.empId,
+      phone: member.phone,
+      tenure: member.tenure,
+      roles: member.roles,
+      venueCodes: [selectedVenueSummary?.dmsCode || currentVenueCode || ""],
+      venueCoverage: 1,
+      totalBatches: member.instances || 0,
+      fullBatchDelay: 0,
+      partialBatchDelay: 0,
+      noDelay: member.instances || 0,
+      ffa: 0,
+      callLogs: member.callLogs || 0,
+      score: 0,
+      assignedToCurrentVenue: true,
+      remarks: member.remarks || "",
+    }));
+  }, [projectDrilldown, selectedProjectVenueCode, selectedProjectReport, selectedVenueSummary, currentVenueCode]);
+
+  const sortedProjectVenueRows = useMemo(() => {
+    const rows = [...projectVenueRows];
+    const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "en", { sensitivity: "base" });
+    if (projectVenueSortBy === "batches_desc") rows.sort((a, b) => (Number(b.totalBatches || 0) - Number(a.totalBatches || 0)) || compareText(a.venueName, b.venueName));
+    else if (projectVenueSortBy === "calls_desc") rows.sort((a, b) => (Number(b.callLogs || 0) - Number(a.callLogs || 0)) || compareText(a.venueName, b.venueName));
+    else rows.sort((a, b) => (Number(b.score || 0) - Number(a.score || 0)) || compareText(a.venueName, b.venueName));
+    return rows;
+  }, [projectVenueRows, projectVenueSortBy]);
+
+  const sortedProjectPeopleRows = useMemo(() => {
+    const rows = [...projectPeopleRows];
+    const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "en", { sensitivity: "base" });
+    if (projectPeopleSortBy === "batches_desc") rows.sort((a, b) => (Number(b.totalBatches || 0) - Number(a.totalBatches || 0)) || compareText(a.personName, b.personName));
+    else if (projectPeopleSortBy === "calls_desc") rows.sort((a, b) => (Number(b.callLogs || 0) - Number(a.callLogs || 0)) || compareText(a.personName, b.personName));
+    else rows.sort((a, b) => (Number(b.score || 0) - Number(a.score || 0)) || compareText(a.personName, b.personName));
+    return rows;
+  }, [projectPeopleRows, projectPeopleSortBy]);
+
+  const showProjectFallbackNote = useMemo(
+    () =>
+      Boolean(
+        projectDrilldownError &&
+          !projectDrilldownBusy &&
+          !projectDrilldown &&
+          selectedProjectReport &&
+          (projectVenueRows.length > 0 || projectPeopleRows.length > 0),
+      ),
+    [projectDrilldownError, projectDrilldownBusy, projectDrilldown, selectedProjectReport, projectVenueRows.length, projectPeopleRows.length],
+  );
+
+  const downloadProjectDrillCsv = useCallback(() => {
+    if (!selectedProjectReport) return;
+    const projectSlug = normalizeToken(selectedProjectReport.project || "project").replace(/\s+/g, "_");
+    const isVenueView = projectDrillLevel === "venues";
+    const headers = isVenueView
+      ? ["Venue", "DMS", "Category", "People", "Total Batches", "No Delay", "Call Logs", "Score"]
+      : ["Person", "Employee ID", "Phone", "Tenure", "Roles", "Venue Coverage", "Total Batches", "No Delay", "Call Logs", "Score"];
+    const rows = isVenueView
+      ? sortedProjectVenueRows.map((row) => [
+          row.venueName || "",
+          row.dmsCode || "",
+          row.category || "",
+          Number(row.peopleCount || 0),
+          Number(row.totalBatches || 0),
+          Number(row.noDelay || 0),
+          Number(row.callLogs || 0),
+          Number(row.score || 0),
+        ])
+      : sortedProjectPeopleRows.map((row) => [
+          row.personName || "",
+          row.empId || "",
+          row.phone || "",
+          row.tenure || "",
+          row.roles || "",
+          Number(row.venueCoverage || 0),
+          Number(row.totalBatches || 0),
+          Number(row.noDelay || 0),
+          Number(row.callLogs || 0),
+          Number(row.score || 0),
+        ]);
+
+    const toCsvCell = (value) => {
+      const text = String(value ?? "");
+      if (/[",\n]/.test(text)) return `"${text.replace(/"/g, "\"\"")}"`;
+      return text;
+    };
+    const csvText = [headers, ...rows].map((line) => line.map(toCsvCell).join(",")).join("\n");
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${projectSlug}_${isVenueView ? "venue_performance" : "person_performance"}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, [projectDrillLevel, selectedProjectReport, sortedProjectPeopleRows, sortedProjectVenueRows]);
 
   const renderCurrentVenueDrilldown = () => {
     if (!selectedVenueSummary || !currentVenueDrillKey || !currentVenueDrilldownData) return null;
@@ -834,7 +1224,7 @@ export default function VenueDetailPage() {
         <div className="dash-header">
           <h1 className="dash-title">Venue Detail</h1>
           <button className="btn-outline" style={{ width: 220 }} onClick={() => goTo("dashboard")}>
-            Back To Dashboard
+            Back to Dashboard
           </button>
         </div>
 
@@ -904,18 +1294,27 @@ export default function VenueDetailPage() {
                 ) : (
                   <div className="photo-placeholder">Photo Not Available</div>
                 )}
-                {photos.length > 1 ? (
-                  <div className="photo-thumb-row">
-                    {photos.map((photo) => (
-                      <button
-                        type="button"
-                        key={photo}
-                        className={`photo-thumb ${photo === activePhoto ? "active" : ""}`}
-                        onClick={() => setActivePhoto(photo)}
-                      >
-                        {photo.split("/").pop()}
-                      </button>
-                    ))}
+                {photos.length ? (
+                  <div className="photo-toggle-row">
+                    <button
+                      type="button"
+                      className="photo-toggle-btn"
+                      onClick={goToPrevPhoto}
+                      disabled={!hasMultiplePhotos}
+                    >
+                      Prev
+                    </button>
+                    <div className="photo-toggle-index">
+                      {activePhotoIndex >= 0 ? activePhotoIndex + 1 : 1} / {photos.length}
+                    </div>
+                    <button
+                      type="button"
+                      className="photo-toggle-btn"
+                      onClick={goToNextPhoto}
+                      disabled={!hasMultiplePhotos}
+                    >
+                      Next
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -945,13 +1344,37 @@ export default function VenueDetailPage() {
             <div className="venue-grid venue-grid-2">
               <div className="venue-card">
                 <div className="venue-card-title">Venue Information</div>
-                <div className="kv-row"><span>Venue SPOC</span><strong>{pretty(venue.venue_spoc_name)}</strong></div>
+                <div className="kv-row">
+                  <span>Venue SPOC</span>
+                  <strong>
+                    <button
+                      type="button"
+                      className="pk-contact-link"
+                      onClick={() => openPersonDetail(venue.venue_spoc_name, venueSpocPerson?.empId || venue?.venue_spoc_emp_id || "")}
+                      title="Open SPOC detail profile"
+                    >
+                      {pretty(venue.venue_spoc_name)}
+                    </button>
+                  </strong>
+                </div>
                 <div className="kv-row"><span>SPOC Contact</span><strong>{pretty(venue.spoc_contact_number)}</strong></div>
                 <div className="kv-row"><span>SPOC Email</span><strong>{pretty(venue.spoc_email_id)}</strong></div>
               </div>
               <div className="venue-card">
                 <div className="venue-card-title">DEXIT SPOC Contact Information</div>
-                <div className="kv-row"><span>Channel Manager</span><strong>{pretty(venue.channel_manager_name)}</strong></div>
+                <div className="kv-row">
+                  <span>Channel Manager</span>
+                  <strong>
+                    <button
+                      type="button"
+                      className="pk-contact-link"
+                      onClick={() => openPersonDetail(venue.channel_manager_name, channelManagerPerson?.empId || venue?.channel_manager_emp_id || "")}
+                      title="Open channel manager detail profile"
+                    >
+                      {pretty(venue.channel_manager_name)}
+                    </button>
+                  </strong>
+                </div>
                 <div className="kv-row"><span>CM Contact</span><strong>{pretty(venue.channel_manager_contact_no)}</strong></div>
                 <div className="kv-row"><span>CM Email</span><strong>{pretty(venue.channel_manager_email_id)}</strong></div>
               </div>
@@ -968,85 +1391,64 @@ export default function VenueDetailPage() {
               <div className="venue-card-title">
                 Market Research & Source Summary
                 <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
-                  Venue-wise researched summary with verified source links
+                  Venue-Wise researched summary with verified source links
                 </span>
               </div>
               {marketResearch ? (
                 <div className="market-research-panel">
-                  <div className="market-research-head">
-                    <div>
-                      <div className="market-research-name">
-                        {marketResearch.venueName || pretty(venue.venue_name || venue.name)}
-                      </div>
-                      <div className="market-research-position">
-                        {marketResearch.marketPosition || "Market position not recorded"}
-                      </div>
-                    </div>
-                    <div className="market-research-status">
-                      <span>{marketResearch.status || "Research pending"}</span>
-                      <strong>{marketResearch.confidence || "Low"} Confidence</strong>
-                    </div>
-                  </div>
-
-                  <div className="market-research-summary">
-                    {marketResearch.summary || "Market research summary has not been recorded for this venue yet."}
-                  </div>
-
-                  <div className="market-research-grid">
-                    <div>
-                      <div className="market-research-subtitle">Operational Upside</div>
-                      {(marketResearch.opportunities || []).length ? (
-                        <ul className="market-research-list">
-                          {marketResearch.opportunities.map((item, idx) => (
-                            <li key={`opportunity-${idx}`}>{item}</li>
-                          ))}
-                        </ul>
+                  <div className="market-simple-grid">
+                    <div className="market-simple-card">
+                      <div className="market-research-subtitle">Overall Summary</div>
+                      {marketExecutiveBrief ? (
+                        <>
+                          <div className="market-exec-title">{marketExecutiveBrief.title}</div>
+                          <div className="market-simple-summary">{marketExecutiveBrief.paragraph}</div>
+                          <ul className="market-exec-list">
+                            {marketExecutiveBrief.highlights.map((line, idx) => (
+                              <li key={`exec-highlight-${idx}`}>{line}</li>
+                            ))}
+                          </ul>
+                          <div className="market-exec-recommendation">
+                            Recommendation: {marketExecutiveBrief.recommendation}
+                          </div>
+                          <div className="market-simple-meta">
+                            <span>{marketExecutiveBrief.status || "Research pending"}</span>
+                            <span>{marketExecutiveBrief.confidence || "Low"} confidence</span>
+                            {marketExecutiveBrief.updatedAt ? <span>Updated: {marketExecutiveBrief.updatedAt}</span> : null}
+                          </div>
+                        </>
                       ) : (
-                        <div className="market-research-muted">No opportunity notes recorded.</div>
+                        <div className="market-simple-summary">
+                          Summary is being prepared from public internet sources.
+                        </div>
                       )}
                     </div>
-                    <div>
-                      <div className="market-research-subtitle">Market / Access Risks</div>
-                      {(marketResearch.risks || []).length ? (
-                        <ul className="market-research-list">
-                          {marketResearch.risks.map((item, idx) => (
-                            <li key={`risk-${idx}`}>{item}</li>
+
+                    <div className="market-simple-card">
+                      <div className="market-research-subtitle">Source Of Info</div>
+                      {(marketResearch.sources || []).length ? (
+                        <div className="market-source-list">
+                          {marketResearch.sources.map((source, idx) => (
+                            <a
+                              key={`${source.url || source.label}-${idx}`}
+                              className="market-source-link"
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <span>{idx + 1}. {source.label || getSourceHost(source.url) || "Source"}</span>
+                              <strong>{getSourceHost(source.url)}</strong>
+                              {source.note ? <small>{source.note}</small> : null}
+                            </a>
                           ))}
-                        </ul>
+                        </div>
                       ) : (
-                        <div className="market-research-muted">No risk notes recorded.</div>
+                        <div className="market-research-no-source">
+                          No source attached yet. Use refresh to fetch internet references.
+                        </div>
                       )}
                     </div>
                   </div>
-
-                  {(marketResearch.sources || []).length ? (
-                    <div className="market-source-list">
-                      <div className="market-research-subtitle">Sources</div>
-                      {marketResearch.sources.map((source, idx) => (
-                        <a
-                          key={`${source.url || source.label}-${idx}`}
-                          className="market-source-link"
-                          href={source.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <span>{source.label || getSourceHost(source.url) || "Source"}</span>
-                          <strong>{getSourceHost(source.url)}</strong>
-                          {source.note ? <small>{source.note}</small> : null}
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="market-research-no-source">
-                      No verified external source is attached yet.
-                    </div>
-                  )}
-
-                  {marketResearch.lastResearchedAt ? (
-                    <div className="market-research-date">
-                      Last researched: {marketResearch.lastResearchedAt}
-                    </div>
-                  ) : null}
                 </div>
               ) : (
                 <div className="google-no-info">
@@ -1061,7 +1463,7 @@ export default function VenueDetailPage() {
               <div className="venue-card-title">
                 Manpower History & Personnel
                 <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
-                  Click name for current venue info, use Complete Details for full profile
+                  Click person name to open detail profile
                 </span>
               </div>
               {manpower.length > 0 ? (
@@ -1084,8 +1486,8 @@ export default function VenueDetailPage() {
                           <td style={{ verticalAlign: "top" }}>
                             <button
                               className="pk-person-link"
-                              onClick={() => handleSelectPerson(p)}
-                              title="Click to view current venue details"
+                              onClick={() => openPersonDetail(p.name, p.empId)}
+                              title="Open full profile"
                             >
                               {p.name}
                             </button>
@@ -1233,69 +1635,228 @@ export default function VenueDetailPage() {
                     <div className="pk-venue-drilldown-panel" style={{ marginTop: "12px" }}>
                       <div className="pk-venue-drilldown-head">
                         <div>
-                          <div className="pk-breadcrumb-lite">Project Report &gt; {selectedProjectReport.project} &gt; Team Detail</div>
-                          <strong>{selectedProjectReport.project} - Team Drilldown</strong>
+                          <div className="pk-breadcrumb-lite">
+                            Project Report &gt; {selectedProjectReport.project} &gt; {projectDrillLevel === "venues" ? "Venue Performance" : "Person Performance"}
+                            {selectedProjectVenueCode ? ` (${selectedProjectVenueCode})` : ""}
+                          </div>
+                          <strong>{selectedProjectReport.project} - Drilldown</strong>
                         </div>
-                        <button className="mp-back-small-btn" onClick={() => setSelectedProjectKey("")}>
-                          Close
-                        </button>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <button
+                            className={`mp-back-small-btn${projectDrillLevel === "venues" ? " is-active" : ""}`}
+                            onClick={() => setProjectDrillLevel("venues")}
+                          >
+                            Venue-Level
+                          </button>
+                          <button
+                            className={`mp-back-small-btn${projectDrillLevel === "people" ? " is-active" : ""}`}
+                            onClick={() => setProjectDrillLevel("people")}
+                          >
+                            Person-Level
+                          </button>
+                          {selectedProjectVenueCode ? (
+                            <button className="mp-back-small-btn" onClick={() => setSelectedProjectVenueCode("")}>
+                              Clear Venue Filter
+                            </button>
+                          ) : null}
+                          <button className="mp-back-small-btn" onClick={() => setSelectedProjectKey("")}>
+                            Close
+                          </button>
+                        </div>
                       </div>
 
                       <div className="pk-deep-summary-grid" style={{ marginBottom: "10px" }}>
                         <div className="pk-deep-summary-box">
-                          <span>Team Members</span>
-                          <strong>{selectedProjectReport.memberCount}</strong>
+                          <span>Venues</span>
+                          <strong>{projectDrilldown?.summary?.uniqueVenues ?? projectVenueRows.length}</strong>
                         </div>
                         <div className="pk-deep-summary-box">
-                          <span>Total Instances</span>
-                          <strong>{selectedProjectReport.totalInstances}</strong>
+                          <span>People</span>
+                          <strong>{projectDrilldown?.summary?.uniquePeople ?? selectedProjectReport.memberCount}</strong>
+                        </div>
+                        <div className="pk-deep-summary-box">
+                          <span>Total Batches</span>
+                          <strong>{projectDrilldown?.summary?.totalBatches ?? selectedProjectReport.totalInstances}</strong>
                         </div>
                         <div className="pk-deep-summary-box">
                           <span>Total Call Logs</span>
-                          <strong>{selectedProjectReport.totalCallLogs}</strong>
+                          <strong>{projectDrilldown?.summary?.callLogs ?? selectedProjectReport.totalCallLogs}</strong>
                         </div>
-                        <div className="pk-deep-summary-box">
-                          <span>Role Diversity</span>
-                          <strong>{selectedProjectReport.roles.length}</strong>
-                        </div>
+                      </div>
+                      <div className="pk-drill-chip-row">
+                        <span className="pk-drill-chip"><strong>Project</strong> {selectedProjectReport.project}</span>
+                        <span className="pk-drill-chip"><strong>Venue</strong> {selectedProjectVenueCode || "All Venues"}</span>
+                        <span className="pk-drill-chip"><strong>View</strong> {projectDrillLevel === "venues" ? "Venue-Level" : "Person-Level"}</span>
+                      </div>
+                      <div className="pk-drill-tools-row">
+                        {projectDrillLevel === "venues" ? (
+                          <select
+                            className="pk-drill-select"
+                            value={projectVenueSortBy}
+                            onChange={(event) => setProjectVenueSortBy(event.target.value)}
+                          >
+                            <option value="score_desc">Sort: Score (High to Low)</option>
+                            <option value="batches_desc">Sort: Total Batches (High to Low)</option>
+                            <option value="calls_desc">Sort: Call Logs (High to Low)</option>
+                          </select>
+                        ) : (
+                          <select
+                            className="pk-drill-select"
+                            value={projectPeopleSortBy}
+                            onChange={(event) => setProjectPeopleSortBy(event.target.value)}
+                          >
+                            <option value="score_desc">Sort: Score (High to Low)</option>
+                            <option value="batches_desc">Sort: Total Batches (High to Low)</option>
+                            <option value="calls_desc">Sort: Call Logs (High to Low)</option>
+                          </select>
+                        )}
+                        <button className="mp-back-small-btn" onClick={downloadProjectDrillCsv}>
+                          Export CSV
+                        </button>
                       </div>
 
-                      <div className="table-wrap">
-                        <table className="data-table">
-                          <thead>
-                            <tr>
-                              <th>Person</th>
-                              <th>Employee ID</th>
-                              <th>Phone</th>
-                              <th>Tenure</th>
-                              <th>Roles</th>
-                              <th>Instances</th>
-                              <th>Call Logs</th>
-                              <th>Remarks</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {selectedProjectReport.members.map((member, idx) => (
-                              <tr key={`project-member-${selectedProjectReport.key}-${idx}`}>
-                                <td><strong>{member.person}</strong></td>
-                                <td>{member.empId}</td>
-                                <td>{member.phone}</td>
-                                <td>{member.tenure}</td>
-                                <td>{member.roles}</td>
-                                <td>{member.instances}</td>
-                                <td>
-                                  {member.callLogs > 0 ? (
-                                    <span className="risk-flag risk-flag-danger">⚠ {member.callLogs}</span>
-                                  ) : (
-                                    <span className="risk-flag risk-flag-clean">✓ 0</span>
-                                  )}
-                                </td>
-                                <td style={{ maxWidth: "280px" }}>{member.remarks || "-"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      {projectDrilldownError && !showProjectFallbackNote ? (
+                        <div className="inline-error" style={{ marginBottom: "10px" }}>{projectDrilldownError}</div>
+                      ) : null}
+                      {showProjectFallbackNote ? (
+                        <div
+                          style={{
+                            marginBottom: "10px",
+                            border: "1px solid #fde68a",
+                            background: "#fffbeb",
+                            color: "#92400e",
+                            borderRadius: "10px",
+                            padding: "8px 10px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {projectDrilldownError}
+                        </div>
+                      ) : null}
+                      {projectDrilldownBusy ? (
+                        <div className="photo-placeholder" style={{ height: "auto", padding: "20px", borderStyle: "dashed" }}>
+                          Loading project drill-down...
+                        </div>
+                      ) : null}
+
+                      {!projectDrilldownBusy && projectDrillLevel === "venues" ? (
+                        sortedProjectVenueRows.length ? (
+                          <div className="table-wrap">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Venue</th>
+                                  <th>DMS</th>
+                                  <th>Category</th>
+                                  <th>People</th>
+                                  <th>Total Batches</th>
+                                  <th>No Delay</th>
+                                  <th>Call Logs</th>
+                                  <th>Score</th>
+                                  <th>Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sortedProjectVenueRows.map((row, idx) => (
+                                  <tr
+                                    key={`project-venue-${selectedProjectReport.key}-${row.dmsCode}-${idx}`}
+                                    className={`pk-drill-row${normalizeDms(selectedProjectVenueCode) === normalizeDms(row.dmsCode) ? " is-active" : ""}`}
+                                    onClick={() => {
+                                      setSelectedProjectVenueCode(row.dmsCode);
+                                      setProjectDrillLevel("people");
+                                    }}
+                                  >
+                                    <td><strong>{row.venueName}</strong>{row.isCurrentVenue ? " (Current)" : ""}</td>
+                                    <td>{row.dmsCode}</td>
+                                    <td>{row.category || "-"}</td>
+                                    <td>{row.peopleCount ?? 0}</td>
+                                    <td>{row.totalBatches ?? 0}</td>
+                                    <td>{row.noDelay ?? 0}</td>
+                                    <td>{row.callLogs ?? 0}</td>
+                                    <td><strong>{row.score ?? 0}</strong></td>
+                                    <td>
+                                      <button
+                                        type="button"
+                                        className="mp-cell-mini-btn"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          openVenueDetail(row.dmsCode);
+                                        }}
+                                        title="Open venue detail"
+                                      >
+                                        Open
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="photo-placeholder" style={{ height: "auto", padding: "20px", borderStyle: "dashed" }}>
+                            No venue-level performance found for this project.
+                          </div>
+                        )
+                      ) : null}
+
+                      {!projectDrilldownBusy && projectDrillLevel === "people" ? (
+                        sortedProjectPeopleRows.length ? (
+                          <div className="table-wrap">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>Person</th>
+                                  <th>Employee ID</th>
+                                  <th>Phone</th>
+                                  <th>Tenure</th>
+                                  <th>Roles</th>
+                                  <th>Venue Coverage</th>
+                                  <th>Total Batches</th>
+                                  <th>No Delay</th>
+                                  <th>Call Logs</th>
+                                  <th>Score</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {sortedProjectPeopleRows.map((member, idx) => (
+                                  <tr key={`project-member-${selectedProjectReport.key}-${member.empId}-${idx}`}>
+                                    <td>
+                                      <button
+                                        type="button"
+                                        className="pk-person-link"
+                                        onClick={() => openPersonDetail(member.personName, member.empId)}
+                                        title="Open person detail profile"
+                                      >
+                                        {member.personName}
+                                      </button>
+                                    </td>
+                                    <td>{member.empId}</td>
+                                    <td>{member.phone || "-"}</td>
+                                    <td>{member.tenure || "-"}</td>
+                                    <td>{member.roles || "-"}</td>
+                                    <td>{member.venueCoverage ?? 0}</td>
+                                    <td>{member.totalBatches ?? 0}</td>
+                                    <td>{member.noDelay ?? 0}</td>
+                                    <td>
+                                      {Number(member.callLogs || 0) > 0 ? (
+                                        <span className="risk-flag risk-flag-danger">Call Logs {member.callLogs}</span>
+                                      ) : (
+                                        <span className="risk-flag risk-flag-clean">Call Logs 0</span>
+                                      )}
+                                    </td>
+                                    <td><strong>{member.score ?? 0}</strong></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="photo-placeholder" style={{ height: "auto", padding: "20px", borderStyle: "dashed" }}>
+                            No person-level performance found for this selection.
+                          </div>
+                        )
+                      ) : null}
                     </div>
                   ) : null}
                 </>
@@ -1312,7 +1873,19 @@ export default function VenueDetailPage() {
                   Selected Person (Current Venue Info)
                 </div>
                 <div className="pk-venue-person-grid">
-                  <div className="kv-row"><span>Name</span><strong>{selectedManpower.name || "N/A"}</strong></div>
+                  <div className="kv-row">
+                    <span>Name</span>
+                    <strong>
+                      <button
+                        type="button"
+                        className="pk-contact-link"
+                        onClick={() => openPersonDetail(selectedManpower.name, selectedManpower.empId)}
+                        title="Open person detail profile"
+                      >
+                        {selectedManpower.name || "N/A"}
+                      </button>
+                    </strong>
+                  </div>
                   <div className="kv-row"><span>Employee ID</span><strong>{selectedManpower.empId || "N/A"}</strong></div>
                   <div className="kv-row"><span>Phone</span><strong>{selectedManpower.phone || "N/A"}</strong></div>
                   <div className="kv-row"><span>Tenure</span><strong>{selectedManpower.tenure || "N/A"}</strong></div>
@@ -1324,7 +1897,7 @@ export default function VenueDetailPage() {
                 <div className="pk-venue-kpi-card">
                   <div className="pk-venue-kpi-title">
                     Rotation Summary (Current Venue)
-                    <span className="pk-click-hint">Click card for details</span>
+                    <span className="pk-click-hint">Click a metric to view details</span>
                   </div>
                   <div className="pk-venue-kpi-grid">
                     <button type="button" className={`pk-venue-kpi-box is-clickable${currentVenueDrillKey === "projects" ? " is-active" : ""}`} onClick={() => toggleCurrentVenueDrill("projects")}><span>Projects</span><strong>{selectedVenueSummary?.uniqueProjects ?? 0}</strong></button>
@@ -1336,7 +1909,7 @@ export default function VenueDetailPage() {
                 <div className="pk-venue-kpi-card">
                   <div className="pk-venue-kpi-title">
                     Delivery Performance (Current Venue)
-                    <span className="pk-click-hint">Click card for details</span>
+                    <span className="pk-click-hint">Click a metric to view details</span>
                   </div>
                   <div className="pk-venue-kpi-grid pk-venue-kpi-grid-6">
                     <button type="button" className={`pk-venue-kpi-box is-clickable${currentVenueDrillKey === "batches" ? " is-active" : ""}`} onClick={() => toggleCurrentVenueDrill("batches")}><span>Batches</span><strong>{selectedVenueSummary?.totalBatches ?? 0}</strong></button>
@@ -1400,3 +1973,5 @@ export default function VenueDetailPage() {
     </div>
   );
 }
+
+

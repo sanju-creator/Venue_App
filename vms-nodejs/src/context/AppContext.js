@@ -75,9 +75,9 @@ export function AppProvider({ children }) {
     setLoading(true);
     try {
       const response = await fetch(`${API}/${endpoint}`, init);
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || data?.message || "Request failed");
+        throw new Error(data?.error || data?.message || `Request failed (${response.status})`);
       }
       return data;
     } finally {

@@ -556,23 +556,23 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
       </div>
 
       <div className="pk-card">
-        <div className="pk-card-title">Rotation Summary <span className="pk-click-hint">Click any metric for details</span></div>
+        <div className="pk-card-title">Rotation Summary <span className="pk-click-hint">Click a metric to view details</span></div>
         <div className="pk-kpi-strip">
-          <div className={kpiClass("projects")} data-tooltip="Click here for details" onClick={() => toggleDrill("projects")}>
+          <div className={kpiClass("projects")} data-tooltip="View details" onClick={() => toggleDrill("projects")}>
             <div className="pk-kpi-value">{summary.uniqueProjects}</div>
-            <div className="pk-kpi-label">Projects {drill === "projects" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Projects {drill === "projects" ? "?" : "?"}</div>
           </div>
-          <div className={kpiClass("drives")} data-tooltip="Click here for details" onClick={() => toggleDrill("drives")}>
+          <div className={kpiClass("drives")} data-tooltip="View details" onClick={() => toggleDrill("drives")}>
             <div className="pk-kpi-value">{summary.uniqueDrives}</div>
-            <div className="pk-kpi-label">Drives {drill === "drives" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Drives {drill === "drives" ? "?" : "?"}</div>
           </div>
-          <div className={kpiClass("venues")} data-tooltip="Click here for details" onClick={() => toggleDrill("venues")}>
+          <div className={kpiClass("venues")} data-tooltip="View details" onClick={() => toggleDrill("venues")}>
             <div className="pk-kpi-value">{summary.uniqueVenues}</div>
-            <div className="pk-kpi-label">Venues {drill === "venues" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Venues {drill === "venues" ? "?" : "?"}</div>
           </div>
-          <div className={kpiClass("records")} data-tooltip="Click here for details" onClick={() => toggleDrill("records")}>
+          <div className={kpiClass("records")} data-tooltip="View details" onClick={() => toggleDrill("records")}>
             <div className="pk-kpi-value">{summary.totalRecords}</div>
-            <div className="pk-kpi-label">Records {drill === "records" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Records {drill === "records" ? "?" : "?"}</div>
           </div>
         </div>
         {drill === "projects" ? (
@@ -610,7 +610,7 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
         ) : null}
         {drill === "records" ? (
           <DrilldownTable
-            title="Date-wise Record Distribution"
+            title="Date-Wise Record Distribution"
             rows={dateRows}
             columns={dateCols}
             onClose={() => setDrill(null)}
@@ -635,31 +635,31 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
       </div>
 
       <div className="pk-card">
-        <div className="pk-card-title">Delivery Performance <span className="pk-click-hint">Click any metric for details</span></div>
+        <div className="pk-card-title">Delivery Performance <span className="pk-click-hint">Click a metric to view details</span></div>
         <div className="pk-kpi-strip pk-delivery-strip">
-          <div className={`${kpiClass("batches")} pk-kpi-neutral`} data-tooltip="Click here for details" onClick={() => toggleDrill("batches")}>
+          <div className={`${kpiClass("batches")} pk-kpi-neutral`} data-tooltip="View details" onClick={() => toggleDrill("batches")}>
             <div className="pk-kpi-value">{delivery.totalBatches}</div>
-            <div className="pk-kpi-label">Batches {drill === "batches" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Batches {drill === "batches" ? "?" : "?"}</div>
           </div>
-          <div className={`${kpiClass("fullDelay")} pk-kpi-danger`} data-tooltip="Click here for details" onClick={() => toggleDrill("fullDelay")}>
+          <div className={`${kpiClass("fullDelay")} pk-kpi-danger`} data-tooltip="View details" onClick={() => toggleDrill("fullDelay")}>
             <div className="pk-kpi-value">{delivery.fullBatchDelay}</div>
-            <div className="pk-kpi-label">Full Delay {drill === "fullDelay" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Full Delay {drill === "fullDelay" ? "?" : "?"}</div>
           </div>
-          <div className={`${kpiClass("partialDelay")} pk-kpi-warn`} data-tooltip="Click here for details" onClick={() => toggleDrill("partialDelay")}>
+          <div className={`${kpiClass("partialDelay")} pk-kpi-warn`} data-tooltip="View details" onClick={() => toggleDrill("partialDelay")}>
             <div className="pk-kpi-value">{delivery.partialBatchDelay}</div>
-            <div className="pk-kpi-label">Partial {drill === "partialDelay" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Partial {drill === "partialDelay" ? "?" : "?"}</div>
           </div>
-          <div className={`${kpiClass("noDelayDrill")} pk-kpi-good`} data-tooltip="Click here for details" onClick={() => toggleDrill("noDelayDrill")}>
+          <div className={`${kpiClass("noDelayDrill")} pk-kpi-good`} data-tooltip="View details" onClick={() => toggleDrill("noDelayDrill")}>
             <div className="pk-kpi-value">{delivery.noDelay}</div>
-            <div className="pk-kpi-label">No Delay {drill === "noDelayDrill" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">No Delay {drill === "noDelayDrill" ? "?" : "?"}</div>
           </div>
-          <div className={`${kpiClass("ffaDrill")} pk-kpi-danger`} data-tooltip="Click here for details" onClick={() => toggleDrill("ffaDrill")}>
+          <div className={`${kpiClass("ffaDrill")} pk-kpi-danger`} data-tooltip="View details" onClick={() => toggleDrill("ffaDrill")}>
             <div className="pk-kpi-value">{delivery.ffa}</div>
-            <div className="pk-kpi-label">FFA {drill === "ffaDrill" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">FFA {drill === "ffaDrill" ? "?" : "?"}</div>
           </div>
-          <div className={`${kpiClass("clDrill")} ${delivery.callLogs > 0 ? "pk-kpi-danger" : "pk-kpi-good"}`} data-tooltip="Click here for details" onClick={() => toggleDrill("clDrill")}>
+          <div className={`${kpiClass("clDrill")} ${delivery.callLogs > 0 ? "pk-kpi-danger" : "pk-kpi-good"}`} data-tooltip="View details" onClick={() => toggleDrill("clDrill")}>
             <div className="pk-kpi-value">{delivery.callLogs}</div>
-            <div className="pk-kpi-label">Call Logs {drill === "clDrill" ? "▲" : "▼"}</div>
+            <div className="pk-kpi-label">Call Logs {drill === "clDrill" ? "?" : "?"}</div>
           </div>
         </div>
         {drill === "batches" ? (
@@ -762,7 +762,7 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
 
       {rp.scores ? (
         <div className="pk-card pk-resource-section">
-          <div className="pk-card-title">Resource Planning & Performance Assessment</div>
+          <div className="pk-card-title">Parameters for Rating Performance</div>
           <div className="pk-resource-top">
             <div className={`pk-class-hero pk-class-${(rp.classification || "").replace(/\s+/g, "").toLowerCase()}`}>
               <div className="pk-class-hero-icon">{rp.classificationIcon}</div>
@@ -800,7 +800,7 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
 
           {(rp.recommendations || []).length > 0 ? (
             <div className="pk-reco-section">
-              <div className="pk-sw-title">Recommendations</div>
+              <div className="pk-sw-title">Highlights</div>
               {rp.recommendations.map((r, i) => (
                 <div key={i} className="pk-reco-item">{"-> "}{r}</div>
               ))}
@@ -810,7 +810,7 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
       ) : null}
 
       <div className="pk-card">
-        <div className="pk-card-title">Venue-wise Rotation History <span className="pk-card-badge">{venueRows.length} venues</span></div>
+        <div className="pk-card-title">Venue-Wise Rotation History <span className="pk-card-badge">{venueRows.length} venue(s)</span></div>
         {venueRows.length ? (
           <div className="table-wrap">
             <table className="data-table">
@@ -851,3 +851,4 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
     </div>
   );
 }
+

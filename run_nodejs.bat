@@ -23,8 +23,8 @@ if not exist node_modules (
   )
 )
 
-echo [1/2] Starting API Server on Port 5001...
-start "VMS API Server" cmd /k "cd /d %CD% && set PORT=5001 && npm run api"
+echo [1/2] Starting API Server on Port 5000...
+start "VMS API Server" cmd /k "cd /d %CD% && set PORT=5000 && npm run api"
 
 echo [2/2] Starting Frontend on Port 3000...
 start "VMS Frontend Server" cmd /k "cd /d %CD% && npm run dev"

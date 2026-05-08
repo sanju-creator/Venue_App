@@ -81,7 +81,7 @@ export default function LoginPage() {
             goTo("dashboard");
           }}
         >
-          Return To Dashboard
+          Back to Dashboard
         </button>
 
         <p className="login-note">

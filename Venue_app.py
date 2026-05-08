@@ -7220,14 +7220,9 @@ if st.session_state.page == "dashboard":
 
 # --- VENUE SEARCH BAR ---
         st.markdown("""
-        <div style="background: var(--surface);
-                    border-radius: 12px; padding: 22px 26px; margin: 12px 0 20px 0;
-                    border: 1px solid var(--border); border-left: 5px solid var(--primary); 
-                    box-shadow: var(--shadow-sm);">
-            <div style="color:var(--text); font-size:18px; font-weight:700; letter-spacing:0.5px; margin-bottom:6px; text-transform:uppercase;">
-                Venue Search
-            </div>
-            <p style="color:var(--text-muted); font-size:13px; margin:0; font-weight:500;">
+        <div class="dashboard-hero-card">
+            <div class="dashboard-hero-title">Venue Search</div>
+            <p class="dashboard-hero-subtitle">
                 Search by Venue Name, DMS Code, City, or any keyword to view complete venue profile and metrics
             </p>
         </div>
@@ -7314,32 +7309,27 @@ if st.session_state.page == "dashboard":
                     cat_color = cat_colors.get(category, "#6B7280")
                     
                     # We split the row into two columns: one for the card, one for the action button
-                    card_col, btn_col = st.columns([5, 1], vertical_alignment="center")
+                    card_col, btn_col = st.columns([5.15, 0.85], vertical_alignment="center")
 
                     with card_col:
                         st.markdown(f"""
                         <div class="vms-card-wrapper">
-                            <div class="vms-card-visual" style="background:#fff; border:1px solid #E2E8F0; border-left:4px solid {cat_color};
-                                        border-radius:12px; padding:14px 18px; margin:6px 0;
-                                        display:flex; justify-content:space-between; align-items:center;
-                                        transition:all 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+                            <div class="vms-card-visual" style="border-left:4px solid {cat_color};">
                                 <div>
-                                    <div style="font-weight:700; font-size:15px; color:#1A202C;">{html.escape(name)}</div>
-                                    <div style="font-size:12px; color:#64748B; margin-top:4px; font-weight:600; letter-spacing:0.3px;">
+                                    <div class="vms-card-title">{html.escape(name)}</div>
+                                    <div class="vms-card-meta">
                                         <span>CODE: {html.escape(dms)}</span>
-                                        <span style="margin:0 8px; color:#CBD5E0;">|</span>
+                                        <span class="vms-card-meta-sep">|</span>
                                         <span>CITY: {html.escape(city)}</span>
-                                        <span style="margin:0 8px; color:#CBD5E0;">|</span>
+                                        <span class="vms-card-meta-sep">|</span>
                                         <span>REGION: {html.escape(region)}</span>
                                     </div>
                                 </div>
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <span style="background:{cat_color}22; color:{cat_color}; font-weight:700;
-                                                padding:4px 12px; border-radius:999px; font-size:12px;">
+                                <div class="vms-card-pills">
+                                    <span class="vms-pill-category" style="background:{cat_color}22; color:{cat_color};">
                                         Cat {html.escape(category)}
                                     </span>
-                                    <span style="background:#F0F4F8; color:#4A5568; font-weight:600;
-                                                padding:4px 10px; border-radius:999px; font-size:12px;">
+                                    <span class="vms-pill-status">
                                         {html.escape(status)}
                                     </span>
                                 </div>
@@ -7625,7 +7615,7 @@ if st.session_state.page == "dashboard":
         render_clickable_metric_card(col_dotc2, "dotc_capacity", "DOTC Seat Capacity", _dotc_seats_temp, "venue_max_capacity", pct=pct)
 
         with col_sep:
-            st.markdown('<div style="border-left: 4px solid #A1C4FC; height: 100px; margin: 5px auto; opacity: 0.6;"></div>', unsafe_allow_html=True)
+            st.markdown('<div style="border-left: 3px solid #A1C4FC; height: 86px; margin: 3px auto; opacity: 0.6;"></div>', unsafe_allow_html=True)
 
         _datc_active_df = df_dash[
             (df_dash['venue_type'].str.strip().str.upper() == "DATC") & 
@@ -7646,7 +7636,7 @@ if st.session_state.page == "dashboard":
         render_clickable_metric_card(col_gen3, "total_datc", "Total DATC Venues", datc_total_filtered, "venue_type", pct=pct)
 
         with col_sep_2:
-            st.markdown('<div style="border-left: 4px solid #A1C4FC; height: 100px; margin: 5px auto; opacity: 0.6;"></div>', unsafe_allow_html=True)
+            st.markdown('<div style="border-left: 3px solid #A1C4FC; height: 86px; margin: 3px auto; opacity: 0.6;"></div>', unsafe_allow_html=True)
 
         render_clickable_metric_card(col_gen4, "inactive_venues", "Inactive Venues", inactive_overall_count, "status", pct=0)
 
@@ -7751,7 +7741,7 @@ if st.session_state.page == "dashboard":
                         margin=dict(t=8, b=26, l=8, r=8),
                         paper_bgcolor="rgba(0,0,0,0)",
                         plot_bgcolor="rgba(0,0,0,0)",
-                        height=325
+                        height=300
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -7815,7 +7805,7 @@ if st.session_state.page == "dashboard":
                 margin=dict(t=20, b=5, l=28, r=28),
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
-                height=325
+                height=300
             )
             st.plotly_chart(fig_radar, use_container_width=True)
 
@@ -7828,7 +7818,7 @@ if st.session_state.page == "dashboard":
                 fig_map_preview = create_india_map_figure(
                     map_df,
                     india_geojson,
-                    height=325,
+                    height=300,
                     show_data=False,
                     zoom=2.35,
                     center=INDIA_MAP_CENTER,

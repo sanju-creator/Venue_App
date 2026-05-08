@@ -93,7 +93,7 @@ export default function MainDataPage() {
         <div className="dash-header">
           <h1 className="dash-title">Master Data Center</h1>
           <button className="btn-outline" style={{ width: 240 }} onClick={() => goTo("dashboard")}>
-            Return To Dashboard
+            Back to Dashboard
           </button>
         </div>
 

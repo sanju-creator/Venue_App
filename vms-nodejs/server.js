@@ -20,6 +20,7 @@ const PHOTOS_PATH = path.join(DATA_PATH, "Venue_Photos");
 const SESSION_LOG_PATH = path.join(DATA_PATH, "user_session_logs.json");
 const MARKET_RESEARCH_PATH = path.join(DATA_PATH, "market_research.json");
 const MAX_SESSION_LOGS = 5000;
+const DEFAULT_RESEARCH_MAX_RESULTS = 6;
 
 if (!fs.existsSync(OUTPUT_PATH)) fs.mkdirSync(OUTPUT_PATH, { recursive: true });
 if (!fs.existsSync(PHOTOS_PATH)) fs.mkdirSync(PHOTOS_PATH, { recursive: true });
@@ -38,12 +39,35 @@ const FILES = {
 };
 
 const USERS = {
-  Prafull: "Prafull@123",
-  Nishant: "Nishant@123",
-  Mayuresh: "Mayuresh@123",
-  Anil: "Anil@123",
-  Admin: "Admin@123",
+  Prafull: {
+    password: "Prafull@123",
+    role: "OperationsHead",
+    permissions: ["view_performance_rankings", "performance_rankings_view"],
+  },
+  Nishant: {
+    password: "Nishant@123",
+    role: "User",
+    permissions: [],
+  },
+  Mayuresh: {
+    password: "Mayuresh@123",
+    role: "User",
+    permissions: [],
+  },
+  Anil: {
+    password: "Anil@123",
+    role: "User",
+    permissions: [],
+  },
+  Admin: {
+    password: "Admin@123",
+    role: "Admin",
+    permissions: ["view_performance_rankings", "performance_rankings_view"],
+  },
 };
+const PERFORMANCE_RANKING_ALLOWED_USERS = new Set(["Admin", "Prafull"]);
+const PERFORMANCE_RANKING_ALLOWED_ROLES = new Set(["Admin", "SuperAdmin", "OperationsHead"]);
+const PERFORMANCE_RANKING_ALLOWED_PERMISSIONS = new Set(["view_performance_rankings", "performance_rankings_view"]);
 
 const REGION_ORDER = ["North One", "North Two", "East", "West", "South"];
 const STATUS_ORDER = ["ACTIVE", "BLACKLISTED", "CUSTOMER SPECIFIC BLACKLISTED"];
@@ -77,6 +101,44 @@ let occupancyCache = null;
 
 function cleanText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function getUserRecord(username) {
+  const normalizedUsername = cleanText(username);
+  const record = USERS[normalizedUsername];
+  return record && typeof record === "object" ? record : null;
+}
+
+function isKnownUser(username) {
+  return Boolean(getUserRecord(username));
+}
+
+function isValidPassword(username, password) {
+  const record = getUserRecord(username);
+  return Boolean(record && record.password === cleanText(password));
+}
+
+function canViewPerformanceRankingsByUser(username) {
+  const normalizedUsername = cleanText(username);
+  const record = getUserRecord(normalizedUsername);
+  if (!record) return false;
+
+  if (PERFORMANCE_RANKING_ALLOWED_USERS.has(normalizedUsername)) return true;
+  if (PERFORMANCE_RANKING_ALLOWED_ROLES.has(cleanText(record.role))) return true;
+
+  const permissionList = Array.isArray(record.permissions) ? record.permissions : [];
+  return permissionList.some((permission) => PERFORMANCE_RANKING_ALLOWED_PERMISSIONS.has(cleanText(permission)));
+}
+
+function normalizeRankingScope(scope) {
+  const normalized = cleanText(scope).toLowerCase();
+  if (normalized === "top25" || normalized === "top_25" || normalized === "top-25") {
+    return { key: "top25", limit: 25 };
+  }
+  if (normalized === "full" || normalized === "all") {
+    return { key: "full", limit: Number.POSITIVE_INFINITY };
+  }
+  return { key: "top10", limit: 10 };
 }
 
 function isBlankLike(value) {
@@ -348,15 +410,460 @@ function normalizeResearchKey(value) {
     .trim();
 }
 
-function readMarketResearchRecords() {
-  if (!fs.existsSync(MARKET_RESEARCH_PATH)) return [];
+function ensureMarketResearchStore() {
+  if (!fs.existsSync(path.dirname(MARKET_RESEARCH_PATH))) {
+    fs.mkdirSync(path.dirname(MARKET_RESEARCH_PATH), { recursive: true });
+  }
+  if (!fs.existsSync(MARKET_RESEARCH_PATH)) {
+    fs.writeFileSync(MARKET_RESEARCH_PATH, JSON.stringify({ venues: [] }, null, 2), "utf8");
+  }
+}
+
+function readMarketResearchStore() {
+  ensureMarketResearchStore();
   try {
     const parsed = JSON.parse(fs.readFileSync(MARKET_RESEARCH_PATH, "utf8"));
-    return Array.isArray(parsed?.venues) ? parsed.venues : [];
+    return {
+      venues: Array.isArray(parsed?.venues) ? parsed.venues : [],
+    };
   } catch (error) {
     console.error("Market research read error:", error.message);
-    return [];
+    return { venues: [] };
   }
+}
+
+function writeMarketResearchStore(store) {
+  const safeStore = {
+    venues: Array.isArray(store?.venues) ? store.venues : [],
+  };
+  ensureMarketResearchStore();
+  fs.writeFileSync(MARKET_RESEARCH_PATH, JSON.stringify(safeStore, null, 2), "utf8");
+}
+
+function readMarketResearchRecords() {
+  return readMarketResearchStore().venues;
+}
+
+function htmlDecode(value) {
+  return String(value ?? "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+}
+
+function stripTags(value) {
+  return cleanText(String(value ?? "").replace(/<[^>]*>/g, " "));
+}
+
+function getHostNameSafe(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
+}
+
+function normalizeSourceUrl(rawUrl) {
+  const raw = cleanText(rawUrl);
+  if (!raw) return "";
+
+  let resolved = raw;
+  if (resolved.startsWith("//")) resolved = `https:${resolved}`;
+  if (resolved.startsWith("/")) resolved = `https://duckduckgo.com${resolved}`;
+
+  try {
+    const parsed = new URL(resolved);
+    if (parsed.hostname.includes("duckduckgo.com")) {
+      const redirect = parsed.searchParams.get("uddg");
+      if (redirect) {
+        const decoded = decodeURIComponent(redirect);
+        return cleanText(decoded);
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function splitResultBlocks(html) {
+  const source = String(html || "");
+  const startRegex = /<div[^>]*class="[^"]*\bresult\b[^"]*"[^>]*>/gi;
+  const starts = Array.from(source.matchAll(startRegex)).map((match) => match.index || 0);
+  if (!starts.length) return [];
+
+  const blocks = [];
+  for (let i = 0; i < starts.length; i += 1) {
+    const from = starts[i];
+    const to = i < starts.length - 1 ? starts[i + 1] : source.length;
+    blocks.push(source.slice(from, to));
+  }
+  return blocks;
+}
+
+function parseDuckDuckGoResults(html, maxResults = DEFAULT_RESEARCH_MAX_RESULTS) {
+  const blocks = splitResultBlocks(html);
+  const parsed = [];
+  for (const block of blocks) {
+    const titleMatch = block.match(/<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titleMatch) continue;
+
+    const rawUrl = titleMatch[1];
+    const title = stripTags(htmlDecode(titleMatch[2]));
+    const url = normalizeSourceUrl(rawUrl);
+    if (!url) continue;
+
+    const snippetMatch = block.match(/<(?:a|div)[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|div)>/i);
+    const snippet = snippetMatch ? stripTags(htmlDecode(snippetMatch[1])) : "";
+    const domain = getHostNameSafe(url);
+
+    if (!title && !snippet) continue;
+    parsed.push({ title: title || domain || "Source", url, snippet, domain });
+    if (parsed.length >= maxResults) break;
+  }
+
+  const seen = new Set();
+  return parsed.filter((item) => {
+    const key = `${item.domain}|${item.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchTextWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildResearchQueries(record, code) {
+  const venueName = cleanText(record?.venue_name || record?.name || "");
+  const city = cleanText(record?.city || "");
+  const state = cleanText(record?.state || "");
+  const address = cleanText(record?.complete_address || record?.address || "");
+  const pincode = cleanText(record?.pincode || "");
+  const dms = cleanDms(code || record?.dms_code || record?.venue_code || record?.code);
+  const location = [city, state, pincode].filter(Boolean).join(" ");
+
+  const queries = [
+    [`"${venueName}"`, `"${address}"`, city, state].filter(Boolean).join(" "),
+    [venueName, address, location].filter(Boolean).join(" "),
+    [venueName, city, state, pincode].filter(Boolean).join(" "),
+    [dms, venueName, city].filter(Boolean).join(" "),
+  ]
+    .map((q) => cleanText(q))
+    .filter(Boolean);
+  return Array.from(new Set(queries)).slice(0, 4);
+}
+
+function tokenizeResearchText(value) {
+  return normalizeResearchKey(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function buildVenueSignals(record, code) {
+  const genericTokens = new Set([
+    "DEXIT",
+    "GLOBAL",
+    "LIMITED",
+    "FORMERLY",
+    "KNOWN",
+    "AS",
+    "NSEIT",
+    "PRIVATE",
+    "PVT",
+    "LTD",
+    "TEST",
+    "CENTER",
+    "CENTRE",
+    "VENUE",
+    "INDIA",
+    "LIMITED",
+    "GLOBAL",
+    "PVT",
+    "PRIVATE",
+    "BUILDING",
+    "FLOOR",
+    "ROAD",
+    "STREET",
+    "NAGAR",
+    "NEAR",
+    "ADJACENT",
+  ]);
+
+  const dms = cleanDms(code || record?.dms_code || record?.venue_code || record?.code);
+  const fullName = normalizeResearchKey(record?.venue_name || record?.name || "");
+  const fullNameCompact = fullName.replace(/\s+/g, "");
+  const nameTokens = tokenizeResearchText(record?.venue_name || record?.name || "")
+    .filter((token) => token.length >= 4 && !genericTokens.has(token));
+  const locationTokens = [
+    ...tokenizeResearchText(record?.city || ""),
+    ...tokenizeResearchText(record?.district || ""),
+    ...tokenizeResearchText(record?.state || ""),
+    ...tokenizeResearchText(record?.pincode || ""),
+  ].filter((token) => token.length >= 4 || /^\d{6}$/.test(token));
+  const addressTokens = tokenizeResearchText(record?.complete_address || record?.address || "")
+    .filter((token) => (token.length >= 5 || /^\d{6}$/.test(token)) && !genericTokens.has(token));
+
+  return {
+    dms,
+    fullName,
+    fullNameCompact,
+    nameTokens: Array.from(new Set(nameTokens)),
+    locationTokens: Array.from(new Set(locationTokens)),
+    addressTokens: Array.from(new Set(addressTokens)),
+  };
+}
+
+function analyzeSourceRelevance(entry, signals) {
+  const haystack = normalizeResearchKey(`${entry?.title || ""} ${entry?.snippet || ""} ${entry?.url || ""}`);
+  const haystackCompact = haystack.replace(/\s+/g, "");
+  if (!haystack) {
+    return { score: 0, hasCodeMatch: false, hasFullNameMatch: false, matchedName: 0, matchedLocation: 0, matchedAddress: 0 };
+  }
+
+  const hasCodeMatch = !!(signals?.dms && haystack.includes(normalizeResearchKey(signals.dms)));
+  const hasFullNameMatch = !!(
+    signals?.fullName &&
+    (haystack.includes(signals.fullName) || (signals?.fullNameCompact && haystackCompact.includes(signals.fullNameCompact)))
+  );
+  let score = hasCodeMatch ? 14 : 0;
+  if (hasFullNameMatch) score += 12;
+
+  const matchedName = (signals?.nameTokens || []).filter((token) => haystack.includes(token)).length;
+  const matchedLocation = (signals?.locationTokens || []).filter((token) => haystack.includes(token)).length;
+  const matchedAddress = (signals?.addressTokens || []).filter((token) => haystack.includes(token)).length;
+
+  score += matchedName * 4;
+  score += matchedLocation * 2;
+  score += matchedAddress * 3;
+
+  if (matchedName > 0 && (matchedLocation > 0 || matchedAddress > 0)) score += 5;
+  if (matchedAddress >= 2) score += 4;
+
+  return { score, hasCodeMatch, hasFullNameMatch, matchedName, matchedLocation, matchedAddress };
+}
+
+function selectRelevantSourcesForVenue(sources, record, code) {
+  const list = Array.isArray(sources) ? sources : [];
+  const signals = buildVenueSignals(record, code);
+  return list
+    .map((source) => {
+      const normalized = {
+        label: cleanText(source?.label || "Source"),
+        url: cleanText(source?.url || ""),
+        note: cleanText(source?.note || ""),
+      };
+      const relevance = analyzeSourceRelevance(
+        {
+          title: normalized.label,
+          snippet: normalized.note,
+          url: normalized.url,
+        },
+        signals,
+      );
+      return {
+        ...normalized,
+        ...relevance,
+      };
+    })
+    .filter((source) => {
+      const highSignal =
+        source.hasCodeMatch ||
+        source.hasFullNameMatch ||
+        (source.matchedName > 0 && (source.matchedLocation > 0 || source.matchedAddress > 0)) ||
+        source.matchedAddress >= 2;
+      return (source.label || source.url) && highSignal && source.score >= 7;
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, DEFAULT_RESEARCH_MAX_RESULTS)
+    .map(({ label, url, note }) => ({ label, url, note }));
+}
+
+function buildSimpleMarketSummary(record, searchResults) {
+  const venueName = cleanText(record?.venue_name || record?.name || "Venue");
+  const city = cleanText(record?.city || "");
+  const state = cleanText(record?.state || "");
+  const location = [city, state].filter(Boolean).join(", ");
+  const domains = Array.from(new Set((searchResults || []).map((r) => r.domain).filter(Boolean)));
+
+  if (!searchResults.length) {
+    return {
+      status: "Research pending",
+      confidence: "Low",
+      marketPosition: location ? `Local venue in ${location}` : "Local venue",
+      summary:
+        "Internet sources could not be verified automatically right now. Please retry and add at least one official/public source for final decision support.",
+      opportunities: [
+        "Attach at least one official venue/company listing and one mapping/access source.",
+      ],
+      risks: [
+        "No reliable public source was found during automatic scan.",
+      ],
+    };
+  }
+
+  const snippetBucket = searchResults
+    .map((item) => cleanText(item.snippet))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" ");
+
+  const hasExamSignal = /(exam|test|center|centre|assessment|digital)/i.test(snippetBucket);
+  const hasLocationSignal = /(road|city|district|state|near|landmark|address)/i.test(snippetBucket);
+  const hasOfficialSignal = domains.some((domain) => /(gov|edu|org|dexitglobal|nseit)/i.test(domain));
+
+  let confidence = "Low";
+  if (searchResults.length >= 5 && hasOfficialSignal) confidence = "High";
+  else if (searchResults.length >= 3) confidence = "Medium";
+
+  const opportunities = [];
+  if (hasExamSignal) opportunities.push("Public web references indicate venue/exam-center relevance, helping faster pre-verification.");
+  if (hasLocationSignal) opportunities.push("Location-related public references are available for quick address and access cross-check.");
+  if (hasOfficialSignal) opportunities.push("At least one authoritative/public domain is available to support source-backed review.");
+  if (!opportunities.length) opportunities.push("Public references are available and can be used as preliminary validation inputs.");
+
+  const risks = [];
+  if (!hasOfficialSignal) risks.push("Most links are generic listings; add one official/public authority source before final decisions.");
+  if (searchResults.length < 3) risks.push("Limited number of sources found; confidence should be treated as low-to-medium.");
+  risks.push("Always validate infra readiness (CCTV/UPS/PWD/seat capacity) on-ground before scheduling.");
+
+  const topDomains = domains.slice(0, 4).join(", ");
+  const summary = [
+    `An internet scan for ${venueName}${location ? ` (${location})` : ""} found ${searchResults.length} relevant public references.`,
+    topDomains ? `Top source domains: ${topDomains}.` : "",
+    "Use this as a preliminary view; complete operational validation is required before final decisions.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    status: "Researched",
+    confidence,
+    marketPosition: location ? `Local venue in ${location}` : "Local venue",
+    summary,
+    opportunities,
+    risks,
+  };
+}
+
+async function generateMarketResearchForVenue(record, code) {
+  const queries = buildResearchQueries(record, code);
+  let collected = [];
+
+  for (const query of queries) {
+    try {
+      const params = new URLSearchParams({ q: query, kl: "in-en" });
+      const html = await fetchTextWithTimeout(
+        `https://html.duckduckgo.com/html/?${params.toString()}`,
+        {
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            Accept: "text/html,application/xhtml+xml",
+            Referer: "https://html.duckduckgo.com/",
+          },
+        },
+      );
+      const results = parseDuckDuckGoResults(html, DEFAULT_RESEARCH_MAX_RESULTS);
+      collected = collected.concat(results);
+      if (collected.length >= DEFAULT_RESEARCH_MAX_RESULTS) break;
+    } catch (error) {
+      // Continue with next query; we still return a fallback summary if no source resolves.
+    }
+  }
+  const signals = buildVenueSignals(record, code);
+
+  const seenUrls = new Set();
+  const sources = collected
+    .map((entry) => {
+      const relevance = analyzeSourceRelevance(entry, signals);
+      return { ...entry, ...relevance };
+    })
+    .filter((entry) => {
+      const highSignal =
+        entry.hasCodeMatch ||
+        entry.hasFullNameMatch ||
+        (entry.matchedName > 0 && (entry.matchedLocation > 0 || entry.matchedAddress > 0)) ||
+        entry.matchedAddress >= 2;
+      return highSignal && entry.score >= 7;
+    })
+    .sort((a, b) => b.score - a.score)
+    .filter((entry) => {
+      if (!entry.url || seenUrls.has(entry.url)) return false;
+      seenUrls.add(entry.url);
+      return true;
+    })
+    .slice(0, DEFAULT_RESEARCH_MAX_RESULTS);
+
+  const summaryBits = buildSimpleMarketSummary(record, sources);
+  const venueName = cleanText(record?.venue_name || record?.name || "Venue");
+  const searchedAt = new Date().toISOString().slice(0, 10);
+
+  return {
+    venueName,
+    aliases: [cleanText(record?.venue_name), cleanText(record?.name)].filter(Boolean),
+    dmsCodes: [cleanDms(code || record?.dms_code || record?.venue_code || record?.code)].filter(Boolean),
+    addressContains: [
+      cleanText(record?.city),
+      cleanText(record?.district),
+      cleanText(record?.state),
+      cleanText(record?.pincode),
+    ].filter(Boolean),
+    status: summaryBits.status,
+    confidence: summaryBits.confidence,
+    marketPosition: summaryBits.marketPosition,
+    summary: summaryBits.summary,
+    opportunities: summaryBits.opportunities,
+    risks: summaryBits.risks,
+    sources: sources.map((item) => ({
+      label: item.title || item.domain || "Source",
+      url: item.url,
+      note: cleanText(item.snippet || "").slice(0, 220),
+    })),
+    searchQuery: queries[0] || venueName,
+    lastResearchedAt: searchedAt,
+  };
+}
+
+function upsertMarketResearchRecord(record) {
+  const store = readMarketResearchStore();
+  const incomingCodes = Array.isArray(record?.dmsCodes) ? record.dmsCodes.map(cleanDms).filter(Boolean) : [];
+  const incomingName = normalizeResearchKey(record?.venueName);
+
+  const index = store.venues.findIndex((entry) => {
+    const entryCodes = Array.isArray(entry?.dmsCodes) ? entry.dmsCodes.map(cleanDms).filter(Boolean) : [];
+    if (incomingCodes.length && entryCodes.some((code) => incomingCodes.includes(code))) return true;
+
+    const entryName = normalizeResearchKey(entry?.venueName);
+    if (incomingName && entryName && (incomingName.includes(entryName) || entryName.includes(incomingName))) {
+      return true;
+    }
+    return false;
+  });
+
+  if (index >= 0) {
+    store.venues[index] = { ...store.venues[index], ...record };
+  } else {
+    store.venues.push(record);
+  }
+
+  writeMarketResearchStore(store);
 }
 
 function buildMarketResearchFallback(record) {
@@ -388,6 +895,28 @@ function buildMarketResearchFallback(record) {
 function findMarketResearchForVenue(record, code) {
   const records = readMarketResearchRecords();
   const dmsCandidates = [code, record?.dms_code, record?.venue_code, record?.code].map(cleanDms).filter(Boolean);
+
+  if (dmsCandidates.length) {
+    const strictByCode = records.find((entry) => {
+      const entryCodes = Array.isArray(entry?.dmsCodes) ? entry.dmsCodes.map(cleanDms).filter(Boolean) : [];
+      return entryCodes.length && dmsCandidates.some((candidate) => entryCodes.includes(candidate));
+    });
+    if (!strictByCode) return buildMarketResearchFallback(record);
+    const relevantSources = selectRelevantSourcesForVenue(strictByCode.sources, record, code);
+    return {
+      venueName: cleanText(strictByCode.venueName || record?.venue_name || record?.name),
+      status: cleanText(strictByCode.status || "Researched"),
+      confidence: cleanText(strictByCode.confidence || "Medium"),
+      marketPosition: cleanText(strictByCode.marketPosition || ""),
+      summary: cleanText(strictByCode.summary || ""),
+      opportunities: Array.isArray(strictByCode.opportunities) ? strictByCode.opportunities.map(cleanText).filter(Boolean) : [],
+      risks: Array.isArray(strictByCode.risks) ? strictByCode.risks.map(cleanText).filter(Boolean) : [],
+      sources: relevantSources,
+      searchQuery: cleanText(strictByCode.searchQuery || ""),
+      lastResearchedAt: cleanText(strictByCode.lastResearchedAt || ""),
+    };
+  }
+
   const textCandidates = [
     record?.venue_name,
     record?.name,
@@ -400,9 +929,6 @@ function findMarketResearchForVenue(record, code) {
     .filter(Boolean);
 
   const matched = records.find((entry) => {
-    const entryCodes = Array.isArray(entry?.dmsCodes) ? entry.dmsCodes.map(cleanDms).filter(Boolean) : [];
-    if (entryCodes.length && dmsCandidates.some((candidate) => entryCodes.includes(candidate))) return true;
-
     const entryTexts = [entry?.venueName, ...(Array.isArray(entry?.aliases) ? entry.aliases : [])]
       .map(normalizeResearchKey)
       .filter(Boolean);
@@ -417,6 +943,7 @@ function findMarketResearchForVenue(record, code) {
   });
 
   if (!matched) return buildMarketResearchFallback(record);
+  const relevantSources = selectRelevantSourcesForVenue(matched.sources, record, code);
   return {
     venueName: cleanText(matched.venueName || record?.venue_name || record?.name),
     status: cleanText(matched.status || "Researched"),
@@ -425,15 +952,7 @@ function findMarketResearchForVenue(record, code) {
     summary: cleanText(matched.summary || ""),
     opportunities: Array.isArray(matched.opportunities) ? matched.opportunities.map(cleanText).filter(Boolean) : [],
     risks: Array.isArray(matched.risks) ? matched.risks.map(cleanText).filter(Boolean) : [],
-    sources: Array.isArray(matched.sources)
-      ? matched.sources
-          .map((source) => ({
-            label: cleanText(source?.label || "Source"),
-            url: cleanText(source?.url || ""),
-            note: cleanText(source?.note || ""),
-          }))
-          .filter((source) => source.label || source.url)
-      : [],
+    sources: relevantSources,
     searchQuery: cleanText(matched.searchQuery || ""),
     lastResearchedAt: cleanText(matched.lastResearchedAt || ""),
   };
@@ -2027,10 +2546,374 @@ function runManpowerQuery(filters = {}) {
   };
 }
 
+function buildPerformanceRankings(queryResult, scope = "top10") {
+  const { key: scopeKey, limit } = normalizeRankingScope(scope);
+
+  const manpowerSourceRows = Array.isArray(queryResult?.manpowerWiseEmployeeRotationDrilldown)
+    ? queryResult.manpowerWiseEmployeeRotationDrilldown
+    : [];
+  const venueSourceRows = Array.isArray(queryResult?.dmsSummary) ? queryResult.dmsSummary : [];
+  const venueLookupRows = Array.isArray(queryResult?.manpowerWiseVenueDrilldown)
+    ? queryResult.manpowerWiseVenueDrilldown
+    : [];
+  const projectSourceRows = Array.isArray(queryResult?.projectSummary) ? queryResult.projectSummary : [];
+
+  const manpowerMap = new Map();
+  manpowerSourceRows.forEach((row) => {
+    const empId = cleanText(row.empId);
+    const personName = cleanText(row.personName) || "Unknown";
+    const mapKey = `${empId || "NA"}||${personName}`;
+    if (!manpowerMap.has(mapKey)) {
+      manpowerMap.set(mapKey, {
+        empId,
+        personName,
+        venues: new Set(),
+        states: new Set(),
+        totalBatches: 0,
+        fullBatchDelay: 0,
+        partialBatchDelay: 0,
+        noDelay: 0,
+        ffa: 0,
+        callLogs: 0,
+      });
+    }
+    const entry = manpowerMap.get(mapKey);
+    if (cleanText(row.venueName)) entry.venues.add(cleanText(row.venueName));
+    if (cleanText(row.state)) entry.states.add(cleanText(row.state));
+    entry.totalBatches += toNumber(row.totalBatches);
+    entry.fullBatchDelay += toNumber(row.fullBatchDelay);
+    entry.partialBatchDelay += toNumber(row.partialBatchDelay);
+    entry.noDelay += toNumber(row.noDelay);
+    entry.ffa += toNumber(row.ffa);
+    entry.callLogs += toNumber(row.callLogs);
+  });
+
+  const manpowerRows = Array.from(manpowerMap.values())
+    .map((entry) => {
+      const scoreRaw =
+        entry.noDelay * 3 +
+        entry.totalBatches * 0.5 +
+        entry.venues.size * 1.5 +
+        entry.states.size * 0.75 -
+        entry.fullBatchDelay * 4 -
+        entry.partialBatchDelay * 2 -
+        entry.ffa * 2 -
+        entry.callLogs * 3;
+      return {
+        empId: entry.empId,
+        personName: entry.personName,
+        venueCoverage: entry.venues.size,
+        totalBatches: entry.totalBatches,
+        noDelay: entry.noDelay,
+        callLogs: entry.callLogs,
+        score: Number(scoreRaw.toFixed(2)),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const venueNameByDms = new Map();
+  venueLookupRows.forEach((row) => {
+    const dmsCode = cleanDms(row.dmsCode);
+    if (!dmsCode || venueNameByDms.has(dmsCode)) return;
+    venueNameByDms.set(dmsCode, cleanText(row.venueName) || dmsCode);
+  });
+
+  const venueRows = venueSourceRows
+    .map((row) => {
+      const scoreRaw =
+        toNumber(row.noBatchDelay) * 3 +
+        toNumber(row.uniqueManpower) * 1.5 +
+        toNumber(row.driveCount) * 1.25 -
+        toNumber(row.fullBatchDelay) * 4 -
+        toNumber(row.partialBatchDelay) * 2 -
+        toNumber(row.ffa) * 2 -
+        toNumber(row.callLogs) * 3;
+      const dmsCode = cleanDms(row.dmsCode);
+      return {
+        venueName: venueNameByDms.get(dmsCode) || dmsCode || "Unknown Venue",
+        dmsCode,
+        uniqueManpower: toNumber(row.uniqueManpower),
+        noBatchDelay: toNumber(row.noBatchDelay),
+        callLogs: toNumber(row.callLogs),
+        score: Number(scoreRaw.toFixed(2)),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const projectRows = projectSourceRows
+    .map((row) => {
+      const scoreRaw =
+        toNumber(row.noBatchDelay) * 3 +
+        toNumber(row.uniqueManpower) * 1.5 +
+        toNumber(row.driveCount) * 1.25 -
+        toNumber(row.fullBatchDelay) * 4 -
+        toNumber(row.partialBatchDelay) * 2 -
+        toNumber(row.ffa) * 2 -
+        toNumber(row.callLogs) * 3;
+      return {
+        projectName: cleanText(row.projectName) || "Unknown Project",
+        driveCount: toNumber(row.driveCount),
+        uniqueManpower: toNumber(row.uniqueManpower),
+        noBatchDelay: toNumber(row.noBatchDelay),
+        callLogs: toNumber(row.callLogs),
+        score: Number(scoreRaw.toFixed(2)),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const sliceRows = (rows) => (Number.isFinite(limit) ? rows.slice(0, limit) : rows);
+  return {
+    scope: scopeKey,
+    totals: {
+      manpower: manpowerRows.length,
+      venues: venueRows.length,
+      projects: projectRows.length,
+    },
+    manpower: sliceRows(manpowerRows),
+    venues: sliceRows(venueRows),
+    projects: sliceRows(projectRows),
+  };
+}
+
+function buildProjectPerformanceDrilldown(projectName, selectedVenueCode = "") {
+  const targetProject = cleanText(projectName);
+  if (!targetProject) {
+    return {
+      project: "",
+      summary: {
+        uniqueVenues: 0,
+        uniquePeople: 0,
+        totalRecords: 0,
+        totalBatches: 0,
+        fullBatchDelay: 0,
+        partialBatchDelay: 0,
+        noDelay: 0,
+        ffa: 0,
+        callLogs: 0,
+      },
+      venues: [],
+      people: [],
+    };
+  }
+
+  const mpPath = path.join(DATA_PATH, "0 Final_Manpower_Data.xlsx");
+  const workbook = readWorkbookSmart(mpPath, "Data");
+  const rows = (workbook.rows || []).map((row) => normalizeRowKeys(row));
+
+  const latestRows = getLatestAnalysisRowsNormalized();
+  const dmsMetaMap = new Map();
+  latestRows.forEach((row) => {
+    const dmsCode = cleanDms(row.dms_code || row.center_code || row.venue_code || row.code);
+    if (!dmsCode || dmsMetaMap.has(dmsCode)) return;
+    dmsMetaMap.set(dmsCode, {
+      venueName: firstNonBlank([row.updated_venue_name, row.venue_name, row.name, row.venue]) || dmsCode,
+      category: cleanText(row.category).toUpperCase() || "-",
+      region: cleanText(row.region) || "-",
+      state: cleanText(row.state) || "-",
+      district: cleanText(row.district) || "-",
+      city: cleanText(row.city) || "-",
+    });
+  });
+
+  const scopedRows = rows.filter((row) => cleanText(row.project_name) === targetProject);
+  const currentVenueCode = cleanDms(selectedVenueCode);
+
+  const venueMap = new Map();
+  const personMap = new Map();
+  const summaryDeliveryKeys = new Set();
+  const uniquePeople = new Set();
+  let totalRecords = 0;
+  let totalBatches = 0;
+  let fullBatchDelay = 0;
+  let partialBatchDelay = 0;
+  let noDelay = 0;
+  let ffa = 0;
+  let callLogs = 0;
+
+  scopedRows.forEach((row) => {
+    totalRecords += 1;
+    const dmsCode = cleanDms(row.dms_code || row.center_code || row.venue_code || row.code);
+    const safeDmsCode = dmsCode || "UNKNOWN";
+    const meta = dmsMetaMap.get(dmsCode) || {};
+    const venueName = cleanText(meta.venueName || row.updated_venue_name || row.venue_name || row.name || safeDmsCode) || safeDmsCode;
+    const driveName = cleanText(row.drive_name) || "Unknown Drive";
+    const empId = cleanText(row.emp_id);
+    const personName = cleanText(row.name) || empId || "Unknown";
+    const personKey = `${empId || "NA"}||${personName}`;
+    if (empId) uniquePeople.add(empId);
+
+    const summaryKey = `${targetProject}||${driveName}||${safeDmsCode}`;
+    if (!summaryDeliveryKeys.has(summaryKey)) {
+      summaryDeliveryKeys.add(summaryKey);
+      totalBatches += toNumber(row.total_batches);
+      fullBatchDelay += toNumber(row.full_batch_delay);
+      partialBatchDelay += toNumber(row.partially_batch_delay);
+      noDelay += toNumber(row.no_delay);
+      ffa += toNumber(row.ffa);
+      callLogs += toNumber(row.call_logs_issue_count);
+    }
+
+    if (!venueMap.has(safeDmsCode)) {
+      venueMap.set(safeDmsCode, {
+        dmsCode: safeDmsCode,
+        venueName,
+        category: cleanText(meta.category) || "-",
+        region: cleanText(meta.region || row.region) || "-",
+        state: cleanText(meta.state || row.state) || "-",
+        district: cleanText(meta.district || row.district) || "-",
+        city: cleanText(meta.city || row.city) || "-",
+        people: new Set(),
+        roles: new Set(),
+        deliveryKeys: new Set(),
+        totalBatches: 0,
+        fullBatchDelay: 0,
+        partialBatchDelay: 0,
+        noDelay: 0,
+        ffa: 0,
+        callLogs: 0,
+      });
+    }
+    const venueEntry = venueMap.get(safeDmsCode);
+    if (personName) venueEntry.people.add(personKey);
+    if (cleanText(row.role)) venueEntry.roles.add(cleanText(row.role));
+    const venueDeliveryKey = `${targetProject}||${driveName}||${safeDmsCode}`;
+    if (!venueEntry.deliveryKeys.has(venueDeliveryKey)) {
+      venueEntry.deliveryKeys.add(venueDeliveryKey);
+      venueEntry.totalBatches += toNumber(row.total_batches);
+      venueEntry.fullBatchDelay += toNumber(row.full_batch_delay);
+      venueEntry.partialBatchDelay += toNumber(row.partially_batch_delay);
+      venueEntry.noDelay += toNumber(row.no_delay);
+      venueEntry.ffa += toNumber(row.ffa);
+      venueEntry.callLogs += toNumber(row.call_logs_issue_count);
+    }
+
+    if (!personMap.has(personKey)) {
+      personMap.set(personKey, {
+        personName,
+        empId: empId || "-",
+        phone: cleanText(row.number) || "-",
+        tenures: new Set(),
+        roles: new Set(),
+        venues: new Set(),
+        deliveryKeys: new Set(),
+        totalBatches: 0,
+        fullBatchDelay: 0,
+        partialBatchDelay: 0,
+        noDelay: 0,
+        ffa: 0,
+        callLogs: 0,
+      });
+    }
+    const personEntry = personMap.get(personKey);
+    if (!personEntry.phone || personEntry.phone === "-") personEntry.phone = cleanText(row.number) || personEntry.phone;
+    if (cleanText(row.tenure)) personEntry.tenures.add(cleanText(row.tenure));
+    if (cleanText(row.role)) personEntry.roles.add(cleanText(row.role));
+    personEntry.venues.add(safeDmsCode);
+    const personDeliveryKey = `${targetProject}||${driveName}||${safeDmsCode}||${personEntry.empId}`;
+    if (!personEntry.deliveryKeys.has(personDeliveryKey)) {
+      personEntry.deliveryKeys.add(personDeliveryKey);
+      personEntry.totalBatches += toNumber(row.total_batches);
+      personEntry.fullBatchDelay += toNumber(row.full_batch_delay);
+      personEntry.partialBatchDelay += toNumber(row.partially_batch_delay);
+      personEntry.noDelay += toNumber(row.no_delay);
+      personEntry.ffa += toNumber(row.ffa);
+      personEntry.callLogs += toNumber(row.call_logs_issue_count);
+    }
+  });
+
+  const venues = Array.from(venueMap.values())
+    .map((entry) => {
+      const scoreRaw =
+        entry.noDelay * 3 +
+        entry.totalBatches * 0.5 +
+        entry.people.size * 1.5 -
+        entry.fullBatchDelay * 4 -
+        entry.partialBatchDelay * 2 -
+        entry.ffa * 2 -
+        entry.callLogs * 3;
+      return {
+        dmsCode: entry.dmsCode,
+        venueName: entry.venueName,
+        category: entry.category,
+        region: entry.region,
+        state: entry.state,
+        district: entry.district,
+        city: entry.city,
+        peopleCount: entry.people.size,
+        roleCount: entry.roles.size,
+        totalBatches: entry.totalBatches,
+        fullBatchDelay: entry.fullBatchDelay,
+        partialBatchDelay: entry.partialBatchDelay,
+        noDelay: entry.noDelay,
+        ffa: entry.ffa,
+        callLogs: entry.callLogs,
+        score: Number(scoreRaw.toFixed(2)),
+        isCurrentVenue: Boolean(currentVenueCode && entry.dmsCode === currentVenueCode),
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.totalBatches !== a.totalBatches) return b.totalBatches - a.totalBatches;
+      return a.venueName.localeCompare(b.venueName, "en", { sensitivity: "base" });
+    });
+
+  const people = Array.from(personMap.values())
+    .map((entry) => {
+      const scoreRaw =
+        entry.noDelay * 3 +
+        entry.totalBatches * 0.5 +
+        entry.venues.size * 1.5 -
+        entry.fullBatchDelay * 4 -
+        entry.partialBatchDelay * 2 -
+        entry.ffa * 2 -
+        entry.callLogs * 3;
+      return {
+        personName: entry.personName,
+        empId: entry.empId,
+        phone: entry.phone,
+        tenure: Array.from(entry.tenures).join(", ") || "-",
+        roles: Array.from(entry.roles).join(", ") || "-",
+        venueCodes: Array.from(entry.venues),
+        venueCoverage: entry.venues.size,
+        totalBatches: entry.totalBatches,
+        fullBatchDelay: entry.fullBatchDelay,
+        partialBatchDelay: entry.partialBatchDelay,
+        noDelay: entry.noDelay,
+        ffa: entry.ffa,
+        callLogs: entry.callLogs,
+        score: Number(scoreRaw.toFixed(2)),
+        assignedToCurrentVenue: Boolean(currentVenueCode && entry.venues.has(currentVenueCode)),
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.totalBatches !== a.totalBatches) return b.totalBatches - a.totalBatches;
+      return a.personName.localeCompare(b.personName, "en", { sensitivity: "base" });
+    });
+
+  return {
+    project: targetProject,
+    summary: {
+      uniqueVenues: venues.length,
+      uniquePeople: uniquePeople.size || people.length,
+      totalRecords,
+      totalBatches,
+      fullBatchDelay,
+      partialBatchDelay,
+      noDelay,
+      ffa,
+      callLogs,
+    },
+    venues,
+    people,
+  };
+}
+
 app.post("/api/login", (req, res) => {
   const username = cleanText(req.body?.username);
   const password = cleanText(req.body?.password);
-  if (USERS[username] && USERS[username] === password) {
+  if (isValidPassword(username, password)) {
+    const userRecord = getUserRecord(username);
     const store = readSessionLogs();
     const nowIso = new Date().toISOString();
     const sessionId = createSessionId(username);
@@ -2052,6 +2935,8 @@ app.post("/api/login", (req, res) => {
     return res.json({
       success: true,
       user: username,
+      role: cleanText(userRecord?.role) || "User",
+      permissions: Array.isArray(userRecord?.permissions) ? userRecord.permissions : [],
       datasets,
       sessionId,
       sessionSummary: buildSessionSummary(username, store.sessions, sessionId),
@@ -2064,7 +2949,7 @@ app.post("/api/logout", (req, res) => {
   const username = cleanText(req.body?.username);
   const sessionId = cleanText(req.body?.sessionId);
 
-  if (!username || !USERS[username]) {
+  if (!username || !isKnownUser(username)) {
     return res.status(400).json({ success: false, message: "Valid user is required" });
   }
 
@@ -2111,7 +2996,7 @@ app.get("/api/session-summary", (req, res) => {
   const limitRaw = Number(req.query.limit);
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 20) : 8;
 
-  if (!username || !USERS[username]) {
+  if (!username || !isKnownUser(username)) {
     return res.status(400).json({ success: false, message: "Valid user is required" });
   }
 
@@ -2126,7 +3011,7 @@ app.get("/api/session-summary", (req, res) => {
 
 app.get("/api/datasets", (req, res) => {
   const username = cleanText(req.query.user);
-  if (!username || !USERS[username]) {
+  if (!username || !isKnownUser(username)) {
     return res.json({ datasets: Object.keys(FILES) });
   }
   const datasets = Object.entries(FILES)
@@ -2137,7 +3022,7 @@ app.get("/api/datasets", (req, res) => {
 
 app.get("/api/master/allowed", (req, res) => {
   const username = cleanText(req.query.user);
-  if (!username || !USERS[username]) {
+  if (!username || !isKnownUser(username)) {
     return res.json({ datasets: [] });
   }
   const datasets = Object.entries(FILES)
@@ -2407,6 +3292,76 @@ app.get("/api/venue/:code/detail", (req, res) => {
   });
 });
 
+app.post("/api/venue/:code/market-research", async (req, res) => {
+  try {
+    const code = cleanDms(req.params.code);
+    if (!code) return res.status(400).json({ error: "Invalid venue code" });
+
+    const rows = getLatestAnalysisRowsNormalized();
+    const record = rows.find((row) => cleanDms(row.dms_code || row.venue_code || row.code) === code);
+    if (!record) return res.status(404).json({ error: "Venue not found" });
+
+    const generated = await generateMarketResearchForVenue(record, code);
+    upsertMarketResearchRecord(generated);
+    const marketResearch = findMarketResearchForVenue(record, code);
+
+    return res.json({
+      success: true,
+      marketResearch,
+      sourceCount: Array.isArray(marketResearch?.sources) ? marketResearch.sources.length : 0,
+      refreshedAt: marketResearch?.lastResearchedAt || new Date().toISOString().slice(0, 10),
+    });
+  } catch (error) {
+    return res.status(500).json({ error: `Market research refresh failed: ${error.message}` });
+  }
+});
+
+app.post("/api/market-research/refresh-all", async (req, res) => {
+  try {
+    const limitRaw = Number(req.body?.limit || 25);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(80, Math.floor(limitRaw))) : 25;
+    const onlyMissing = req.body?.onlyMissing !== false;
+
+    const rows = getLatestAnalysisRowsNormalized();
+    const uniqueByCode = new Map();
+    rows.forEach((row) => {
+      const code = cleanDms(row.dms_code || row.venue_code || row.code);
+      if (!code || uniqueByCode.has(code)) return;
+      uniqueByCode.set(code, row);
+    });
+
+    const candidates = Array.from(uniqueByCode.entries()).filter(([code, row]) => {
+      if (!onlyMissing) return true;
+      const existing = findMarketResearchForVenue(row, code);
+      return !Array.isArray(existing?.sources) || existing.sources.length === 0;
+    });
+
+    const sliced = candidates.slice(0, limit);
+    let refreshed = 0;
+    const failed = [];
+
+    for (const [code, row] of sliced) {
+      try {
+        const generated = await generateMarketResearchForVenue(row, code);
+        upsertMarketResearchRecord(generated);
+        refreshed += 1;
+      } catch (error) {
+        failed.push({ code, error: cleanText(error?.message || "Unknown error") });
+      }
+    }
+
+    return res.json({
+      success: true,
+      totalCandidates: candidates.length,
+      attempted: sliced.length,
+      refreshed,
+      failed,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: `Bulk market research refresh failed: ${error.message}` });
+  }
+});
+
 app.post("/api/process/run", (req, res) => {
   try {
     const result = runCentralAnalysis();
@@ -2433,6 +3388,117 @@ app.post("/api/manpower/query", (req, res) => {
   try {
     const result = runManpowerQuery(req.body || {});
     return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/manpower/project-drilldown", (req, res) => {
+  try {
+    const project = cleanText(req.query.project);
+    const venueCode = cleanText(req.query.venueCode || req.query.dmsCode || "");
+    if (!project) {
+      return res.status(400).json({ error: "Project is required" });
+    }
+    const result = buildProjectPerformanceDrilldown(project, venueCode);
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/manpower/performance-rankings", (req, res) => {
+  try {
+    const username = cleanText(req.body?.username || req.query.user || req.get("x-vms-user"));
+    if (!username || !isKnownUser(username)) {
+      return res.status(401).json({ error: "Unauthorized user" });
+    }
+    if (!canViewPerformanceRankingsByUser(username)) {
+      return res.status(403).json({ error: "Access denied for performance rankings" });
+    }
+
+    const scope = cleanText(req.body?.scope || req.query.scope || "top10");
+    const hasNestedQuery = req.body?.query && typeof req.body.query === "object";
+    const queryPayload = hasNestedQuery ? { ...req.body.query } : { ...(req.body || {}) };
+    delete queryPayload.username;
+    delete queryPayload.scope;
+    delete queryPayload.query;
+
+    const result = runManpowerQuery(queryPayload);
+    const rankings = buildPerformanceRankings(result, scope);
+    return res.json({
+      success: true,
+      ...rankings,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/manpower/person-lookup", (req, res) => {
+  try {
+    const targetName = cleanText(req.query.name);
+    const targetDms = cleanDms(req.query.dmsCode || req.query.dms || req.query.venueCode || "");
+    if (!targetName) return res.status(400).json({ error: "Name is required" });
+
+    const mpPath = path.join(DATA_PATH, "0 Final_Manpower_Data.xlsx");
+    if (!fs.existsSync(mpPath)) return res.status(404).json({ error: "Manpower data not found" });
+
+    const workbook = readWorkbookSmart(mpPath, "Data");
+    const allRows = (workbook.rows || []).map((r) => normalizeRowKeys(r));
+
+    const norm = (value) =>
+      cleanText(value)
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "");
+
+    const targetNorm = norm(targetName);
+    if (!targetNorm) return res.status(400).json({ error: "Invalid name" });
+
+    const scoreMap = new Map();
+
+    for (const row of allRows) {
+      const empId = cleanText(row.emp_id);
+      const name = cleanText(row.name);
+      if (!empId || !name) continue;
+
+      const rowNorm = norm(name);
+      if (!rowNorm) continue;
+
+      let score = 0;
+      if (rowNorm === targetNorm) score += 100;
+      else if (rowNorm.startsWith(targetNorm) || targetNorm.startsWith(rowNorm)) score += 80;
+      else if (rowNorm.includes(targetNorm) || targetNorm.includes(rowNorm)) score += 60;
+      else continue;
+
+      const rowDms = cleanDms(row.dms_code || row.center_code || row.venue_code || row.code);
+      if (targetDms && rowDms && rowDms === targetDms) score += 25;
+
+      if (cleanText(row.number)) score += 2;
+      if (cleanText(row.email)) score += 2;
+
+      const existing = scoreMap.get(empId);
+      if (!existing || score > existing.score) {
+        scoreMap.set(empId, {
+          empId,
+          name,
+          phone: cleanText(row.number),
+          email: cleanText(row.email),
+          score,
+        });
+      }
+    }
+
+    const best = Array.from(scoreMap.values()).sort((a, b) => b.score - a.score)[0];
+    if (!best) return res.status(404).json({ error: "Person not found" });
+
+    return res.json({
+      empId: best.empId,
+      name: best.name,
+      phone: best.phone,
+      email: best.email,
+      confidence: best.score >= 100 ? "high" : best.score >= 80 ? "medium" : "low",
+    });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }

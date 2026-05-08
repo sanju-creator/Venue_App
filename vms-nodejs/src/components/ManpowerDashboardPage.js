@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import { useApp } from "@/context/AppContext";
+import Breadcrumbs from "@/components/Breadcrumbs";
 
 const EMPLOYEE_TYPES = ["DEXIT", "Outsourced"];
 const DELAY_OPTIONS = ["Full Batch Delay", "Partially Batch Delay", "No Delay"];
@@ -36,6 +37,7 @@ const TENURE_COLUMNS = [
   { code: "Unknown", key: "tenureUnknownCount", label: "Unknown" },
 ];
 const CATEGORY_CODES = CATEGORY_COLUMNS.map((column) => column.code);
+const PERFORMANCE_RANKING_ALLOWED_USERS = ["Admin", "Prafull"];
 const DEFAULT_FILTERS = {
   project: "",
   employee: "",
@@ -557,7 +559,7 @@ function ManpowerCategoryVenueTable({ rows }) {
             ))
           ) : (
             <tr>
-              <td colSpan={3}>No category-wise venue trend data found.</td>
+              <td colSpan={3}>No Category-Wise venue trend data found.</td>
             </tr>
           )}
         </tbody>
@@ -588,7 +590,7 @@ function CategoryWiseCallLogTable({ rows, totalCallLogs, onCategoryClick }) {
             ))
           ) : (
             <tr>
-              <td colSpan={3}>No category-wise data found.</td>
+              <td colSpan={3}>No Category-Wise data found.</td>
             </tr>
           )}
         </tbody>
@@ -990,7 +992,7 @@ function parsePersonDetailStats(personDetails) {
 }
 
 export default function ManpowerDashboardPage() {
-  const { fetchApi, goTo, selectedVenueCode, setSelectedVenueCode, manpowerFilter, setManpowerFilter, openVenueDetail } = useApp();
+  const { fetchApi, goTo, selectedVenueCode, setSelectedVenueCode, manpowerFilter, setManpowerFilter, openVenueDetail, user } = useApp();
   const [search, setSearch] = useState("");
   const [employeeTypes, setEmployeeTypes] = useState([...EMPLOYEE_TYPES]);
   const [dateMode, setDateMode] = useState(DATE_MODES.all);
@@ -1019,6 +1021,12 @@ export default function ManpowerDashboardPage() {
   const [selectedTrendVenue, setSelectedTrendVenue] = useState(null);
   const [selectedPersonDrilldown, setSelectedPersonDrilldown] = useState(null);
   const [stateCompareSelection, setStateCompareSelection] = useState({ leftState: "", rightState: "" });
+  const [performanceView, setPerformanceView] = useState("manpower");
+  const [performanceScope, setPerformanceScope] = useState("top10");
+  const [performanceRankings, setPerformanceRankings] = useState(null);
+  const [performanceBusy, setPerformanceBusy] = useState(false);
+  const [performanceError, setPerformanceError] = useState("");
+  const [lastQueryPayload, setLastQueryPayload] = useState(null);
 
   // Unified Hierarchical Drilldown Path for Manpower
   const [drilldownPath, setDrilldownPath] = useState({
@@ -1066,9 +1074,53 @@ export default function ManpowerDashboardPage() {
 
 
 
+  const canViewPerformanceRankings = useMemo(() => {
+    if (!user) return false;
+    const permissionList = Array.isArray(user.permissions) ? user.permissions : [];
+    const roleName = String(user.role || user.userType || "").trim();
+    return (
+      PERFORMANCE_RANKING_ALLOWED_USERS.includes(user.user) ||
+      ["Admin", "SuperAdmin", "OperationsHead"].includes(roleName) ||
+      permissionList.includes("view_performance_rankings") ||
+      permissionList.includes("performance_rankings_view")
+    );
+  }, [user]);
+
+  const loadPerformanceRankings = useCallback(
+    async (queryPayload, scopeOverride = performanceScope) => {
+      if (!canViewPerformanceRankings || !user?.user) {
+        setPerformanceRankings(null);
+        setPerformanceError("");
+        return;
+      }
+
+      setPerformanceBusy(true);
+      setPerformanceError("");
+      try {
+        const data = await fetchApi("manpower/performance-rankings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: user.user,
+            scope: scopeOverride,
+            query: queryPayload || {},
+          }),
+        });
+        setPerformanceRankings(data);
+      } catch (err) {
+        setPerformanceRankings(null);
+        setPerformanceError(err.message || "Unable to load performance rankings.");
+      } finally {
+        setPerformanceBusy(false);
+      }
+    },
+    [canViewPerformanceRankings, fetchApi, performanceScope, user],
+  );
+
   const runQuery = useCallback(async (payload) => {
     setBusy(true);
     setError("");
+    setPerformanceError("");
     try {
       const requestBody = payload || {
         search: search.trim(),
@@ -1090,6 +1142,7 @@ export default function ManpowerDashboardPage() {
         body: JSON.stringify(requestBody),
       });
       setResult(data);
+      setLastQueryPayload(requestBody);
       setSelectedDrilldown(null);
       setSelectedManpowerDrilldown(null);
       setStateCompareOpen(false);
@@ -1110,6 +1163,7 @@ export default function ManpowerDashboardPage() {
       setSelectedPersonDrilldown(null);
     } catch (err) {
       setError(err.message || "Failed to load manpower dashboard");
+      setPerformanceRankings(null);
     } finally {
       setBusy(false);
     }
@@ -1118,7 +1172,11 @@ export default function ManpowerDashboardPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       let initialSearch = "";
-      if (manpowerFilter?.dmsCode) {
+      if (manpowerFilter?.search) {
+        initialSearch = String(manpowerFilter.search || "");
+        setSearch(initialSearch);
+        setManpowerFilter(null);
+      } else if (manpowerFilter?.dmsCode) {
         initialSearch = manpowerFilter.dmsCode;
         setSearch(initialSearch);
         setManpowerFilter(null);
@@ -1147,6 +1205,17 @@ export default function ManpowerDashboardPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manpowerFilter, selectedVenueCode]);
+
+  useEffect(() => {
+    if (!canViewPerformanceRankings) {
+      setPerformanceRankings(null);
+      setPerformanceError("");
+      return;
+    }
+    if (!lastQueryPayload) return;
+    loadPerformanceRankings(lastQueryPayload, performanceScope);
+  }, [canViewPerformanceRankings, lastQueryPayload, loadPerformanceRankings, performanceScope]);
+
   const kpiCards = useMemo(() => {
     const overview = result?.overview || {};
     return [
@@ -1172,6 +1241,7 @@ export default function ManpowerDashboardPage() {
       { key: "callLogs", title: "CALL LOGS", value: overview.callLogs || 0, color: "#e39400" },
     ];
   }, [result]);
+
   const activeDrilldownChartData = useMemo(() => {
     if (!drilldownPath.metric || !result) return [];
     
@@ -1671,6 +1741,19 @@ export default function ManpowerDashboardPage() {
         return a.reason.localeCompare(b.reason, "en", { sensitivity: "base" });
       });
   }, [categoryCallLogSourceRows, selectedCategoryCallLog]);
+
+  const manpowerPerformanceRows = useMemo(
+    () => (Array.isArray(performanceRankings?.manpower) ? performanceRankings.manpower : []),
+    [performanceRankings],
+  );
+  const venuePerformanceRows = useMemo(
+    () => (Array.isArray(performanceRankings?.venues) ? performanceRankings.venues : []),
+    [performanceRankings],
+  );
+  const projectPerformanceRows = useMemo(
+    () => (Array.isArray(performanceRankings?.projects) ? performanceRankings.projects : []),
+    [performanceRankings],
+  );
 
   const drilldownRows = useMemo(() => {
     if (!selectedDrilldown) return [];
@@ -2408,7 +2491,7 @@ export default function ManpowerDashboardPage() {
             return (
               <div 
                 key={card.key} 
-                data-tooltip="Click here for details"
+                data-tooltip="View details"
                 className={`mp-kpi-card mp-kpi-clickable${drilldownPath.metric === card.key ? ' active' : ''}${severityClass}`} 
                 style={{ "--card-color": card.color }}
                 onClick={() => {
@@ -2421,12 +2504,200 @@ export default function ManpowerDashboardPage() {
               >
                 <div className="mp-kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
                 <div className="mp-kpi-value">{formatCount(card.value)}</div>
-                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "▲ Close" : "▼ Details"}</div>
+                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "Hide details" : "View details"}</div>
               </div>
             );
           })}
         </div>
       </section>
+
+      {canViewPerformanceRankings ? (
+        <section className="mp-performance-section">
+          <div className="mp-performance-head">
+            <h3 className="section-title">
+              Performance Rankings (Top to Bottom)
+              {performanceRankings?.scope === "top10" ? " - Top 10" : ""}
+              {performanceRankings?.scope === "top25" ? " - Top 25" : ""}
+              {performanceRankings?.scope === "full" ? " - Full List" : ""}
+            </h3>
+            <div className="mp-performance-tabs">
+              <button
+                className={`mp-action-btn${performanceView === "manpower" ? " mp-action-btn-primary" : ""}`}
+                onClick={() => setPerformanceView("manpower")}
+              >
+                Manpower
+              </button>
+              <button
+                className={`mp-action-btn${performanceView === "venues" ? " mp-action-btn-primary" : ""}`}
+                onClick={() => setPerformanceView("venues")}
+              >
+                Venues
+              </button>
+              <button
+                className={`mp-action-btn${performanceView === "projects" ? " mp-action-btn-primary" : ""}`}
+                onClick={() => setPerformanceView("projects")}
+              >
+                Projects
+              </button>
+            </div>
+          </div>
+          <div className="mp-performance-scopes">
+            <button
+              className={`mp-action-btn${performanceScope === "top10" ? " mp-action-btn-primary" : ""}`}
+              onClick={() => setPerformanceScope("top10")}
+            >
+              Top 10
+            </button>
+            <button
+              className={`mp-action-btn${performanceScope === "top25" ? " mp-action-btn-primary" : ""}`}
+              onClick={() => setPerformanceScope("top25")}
+            >
+              Top 25
+            </button>
+            <button
+              className={`mp-action-btn${performanceScope === "full" ? " mp-action-btn-primary" : ""}`}
+              onClick={() => setPerformanceScope("full")}
+            >
+              Full
+            </button>
+            <span className="mp-performance-count">
+              Manpower: {formatCount(performanceRankings?.totals?.manpower || 0)} | Venues: {formatCount(performanceRankings?.totals?.venues || 0)} | Projects: {formatCount(performanceRankings?.totals?.projects || 0)}
+            </span>
+          </div>
+          {performanceError ? <div className="inline-error">{performanceError}</div> : null}
+
+          {performanceView === "manpower" ? (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Person</th>
+                    <th>Employee ID</th>
+                    <th>Venue Coverage</th>
+                    <th>Total Batches</th>
+                    <th>No Delay</th>
+                    <th>Call Logs</th>
+                    <th>Performance Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {performanceBusy ? (
+                    <tr>
+                      <td colSpan={8}>Loading performance rankings...</td>
+                    </tr>
+                  ) : manpowerPerformanceRows.length ? (
+                    manpowerPerformanceRows.map((row, index) => (
+                      <tr key={`perf-manpower-${row.empId || row.personName}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>{row.personName}</td>
+                        <td>{row.empId || "-"}</td>
+                        <td>{formatCount(row.venueCoverage || 0)}</td>
+                        <td>{formatCount(row.totalBatches)}</td>
+                        <td>{formatCount(row.noDelay)}</td>
+                        <td>{formatCount(row.callLogs)}</td>
+                        <td><strong>{row.score}</strong></td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8}>No manpower performance data available.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {performanceView === "venues" ? (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Venue</th>
+                    <th>DMS Code</th>
+                    <th>Unique Manpower</th>
+                    <th>Total No Delay</th>
+                    <th>Call Logs</th>
+                    <th>Performance Score</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {performanceBusy ? (
+                    <tr>
+                      <td colSpan={8}>Loading performance rankings...</td>
+                    </tr>
+                  ) : venuePerformanceRows.length ? (
+                    venuePerformanceRows.map((row, index) => (
+                      <tr key={`perf-venue-${row.dmsCode}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>{row.venueName || "-"}</td>
+                        <td>{row.dmsCode || "-"}</td>
+                        <td>{formatCount(row.uniqueManpower || 0)}</td>
+                        <td>{formatCount(row.noBatchDelay || 0)}</td>
+                        <td>{formatCount(row.callLogs || 0)}</td>
+                        <td><strong>{row.score}</strong></td>
+                        <td>
+                          <button className="mp-cell-mini-btn" onClick={() => openVenueDetail(row.dmsCode)} title="View venue details">
+                            Open
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8}>No venue performance data available.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {performanceView === "projects" ? (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Project</th>
+                    <th>Drive Count</th>
+                    <th>Unique Manpower</th>
+                    <th>No Delay</th>
+                    <th>Call Logs</th>
+                    <th>Performance Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {performanceBusy ? (
+                    <tr>
+                      <td colSpan={7}>Loading performance rankings...</td>
+                    </tr>
+                  ) : projectPerformanceRows.length ? (
+                    projectPerformanceRows.map((row, index) => (
+                      <tr key={`perf-project-${row.projectName}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>{row.projectName || "-"}</td>
+                        <td>{formatCount(row.driveCount || 0)}</td>
+                        <td>{formatCount(row.uniqueManpower || 0)}</td>
+                        <td>{formatCount(row.noBatchDelay || 0)}</td>
+                        <td>{formatCount(row.callLogs || 0)}</td>
+                        <td><strong>{row.score}</strong></td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={7}>No project performance data available.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {drilldownPath.metric ? (
         <section className="kpi-drilldown-section" id="mp-drilldown-section">
@@ -2541,7 +2812,7 @@ export default function ManpowerDashboardPage() {
         <>
           <div className="mp-table-head-row">
             <h3 className="section-title">
-              {selectedDrilldown.region} Region vs {selectedDrilldown.category} category wise Manpower Details
+              {selectedDrilldown.region} Region vs {selectedDrilldown.category} Category Manpower Details
               {selectedDrilldown.state ? ` for ${selectedDrilldown.state} State` : ""}
               {selectedDrilldown.city ? ` and ${selectedDrilldown.city} City` : ""}
               {selectedDrilldown.venueName ? ` in ${selectedDrilldown.venueName} Venue` : ""}
@@ -2980,7 +3251,7 @@ export default function ManpowerDashboardPage() {
         </>
       ) : (
         <>
-          <h3 className="section-title">Region vs Category wise Manpower Details</h3>
+          <h3 className="section-title">Region vs Category Manpower Details</h3>
           <div className="flex-table-row">
             <div className="half-col">
               <div className="chart-container" style={{ height: "100%", minHeight: "350px", width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
@@ -3294,7 +3565,7 @@ export default function ManpowerDashboardPage() {
             </>
           ) : (
             <>
-              <h3 className="section-title">Manpower wise Details</h3>
+              <h3 className="section-title">Manpower-Wise Details</h3>
               <div className="flex-table-row">
                 <div className="half-col">
                   <div className="chart-container" style={{ height: "100%", minHeight: "350px", width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
@@ -3369,3 +3640,4 @@ export default function ManpowerDashboardPage() {
     </div>
   );
 }
+

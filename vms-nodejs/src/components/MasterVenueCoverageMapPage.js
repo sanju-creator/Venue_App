@@ -189,7 +189,7 @@ export default function MasterVenueCoverageMapPage() {
     <div className="map-page-shell">
       <main className="map-page-main">
         <div className="dash-header">
-          <h1 className="dash-title">DEXIT MASTER VENUE COVERAGE MAP</h1>
+          <h1 className="dash-title">DEXIT Master Venue Coverage Map</h1>
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
             <button className="btn-outline" style={{ width: "auto", minHeight: "40px", padding: "0 20px" }} onClick={() => goTo("dashboard")}>
               Back to Dashboard
@@ -222,7 +222,7 @@ export default function MasterVenueCoverageMapPage() {
             </div>
 
             <div className="card">
-              <h3 className="section-title">Pan India DOTC & DATC Network Overall Summary</h3>
+              <h3 className="section-title">Pan-India DATC & DOTC Network Summary</h3>
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
@@ -264,22 +264,22 @@ export default function MasterVenueCoverageMapPage() {
                       <thead>
                         <tr>
                           <th>Metric</th>
-                          <th>DOTC</th>
                           <th>DATC</th>
+                          <th>DOTC</th>
                           <th>Total</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td><strong>Centre</strong></td>
-                          <td>{stateOverview.dotc}</td>
+                          <td><strong>Centres</strong></td>
                           <td>{stateOverview.datc}</td>
+                          <td>{stateOverview.dotc}</td>
                           <td>{stateOverview.total}</td>
                         </tr>
                         <tr>
                           <td><strong>Seat Capacity</strong></td>
-                          <td>{stateOverview.dotcCap.toLocaleString('en-IN')}</td>
                           <td>{stateOverview.datcCap.toLocaleString('en-IN')}</td>
+                          <td>{stateOverview.dotcCap.toLocaleString('en-IN')}</td>
                           <td>{stateOverview.totalCap.toLocaleString('en-IN')}</td>
                         </tr>
                       </tbody>
@@ -321,22 +321,22 @@ export default function MasterVenueCoverageMapPage() {
                           <thead>
                             <tr>
                               <th>Metric</th>
-                              <th>DOTC</th>
                               <th>DATC</th>
+                              <th>DOTC</th>
                               <th>Total</th>
                             </tr>
                           </thead>
                           <tbody>
                             <tr>
-                              <td><strong>Centre</strong></td>
-                              <td>{districtOverview.dotc}</td>
+                              <td><strong>Centres</strong></td>
                               <td>{districtOverview.datc}</td>
+                              <td>{districtOverview.dotc}</td>
                               <td>{districtOverview.total}</td>
                             </tr>
                             <tr>
                               <td><strong>Seat Capacity</strong></td>
-                              <td>{districtOverview.dotcCap.toLocaleString('en-IN')}</td>
                               <td>{districtOverview.datcCap.toLocaleString('en-IN')}</td>
+                              <td>{districtOverview.dotcCap.toLocaleString('en-IN')}</td>
                               <td>{districtOverview.totalCap.toLocaleString('en-IN')}</td>
                             </tr>
                           </tbody>

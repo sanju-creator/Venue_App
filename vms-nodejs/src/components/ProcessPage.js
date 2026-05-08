@@ -80,7 +80,7 @@ export default function ProcessPage() {
         <div className="dash-header">
           <h1 className="dash-title">Central Analysis Engine</h1>
           <button className="btn-outline" style={{ width: 240 }} onClick={() => goTo("dashboard")}>
-            Return To Dashboard
+            Back to Dashboard
           </button>
         </div>
 
@@ -108,7 +108,7 @@ export default function ProcessPage() {
         {result?.analysisCounts ? (
           <div className="kpi-row kpi-row-4">
             {Object.entries(result.analysisCounts).map(([key, value]) => (
-              <div className="kpi-box kpi-clickable" key={key} data-tooltip="Click here for details">
+              <div className="kpi-box kpi-clickable" key={key} data-tooltip="View details">
                 <div className="kpi-title">{key}</div>
                 <div className="kpi-val">{value}</div>
               </div>

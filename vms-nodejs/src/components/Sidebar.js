@@ -17,7 +17,7 @@ const FILTER_SECTIONS = [
     title: "Projects",
     items: [
       { key: "projectName", label: "Name" },
-      { key: "projectMonth", label: "Month-wise" },
+      { key: "projectMonth", label: "Month-Wise" },
     ],
   },
   {
@@ -28,17 +28,17 @@ const FILTER_SECTIONS = [
     ],
   },
   {
-    title: "Manpower details",
+    title: "Manpower Details",
     items: [
-      { key: "examWise", label: "Exam wise" },
+      { key: "examWise", label: "Exam-Wise" },
       { key: "roles", label: "Roles" },
       { key: "documents", label: "Documents" },
     ],
   },
   {
-    title: "DATC & DOTC inventory",
+    title: "DATC & DOTC Inventory",
     items: [
-      { key: "venueType", label: "Type (DOTC/DATC)" },
+      { key: "venueType", label: "Type (DATC/DOTC)" },
     ],
   },
 ];
@@ -72,7 +72,7 @@ function QuickActions() {
         className="btn-outline"
         onClick={() => goTo("city_datc_dotc", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] })}
       >
-        DATC &amp; DOTC Inventory Summary
+        DATC &amp; DOTC Inventory Dashboard
       </button>
     </>
   );
@@ -85,17 +85,17 @@ export default function Sidebar({
   onSelectAll,
   onClearAll,
   onResetAll,
-  venueSearchConfig = null,
+  globalSearchConfig = null,
   mobileOpen = false,
   onToggleMobile = () => {},
 }) {
-  const { API, user, logout, goTo, sidebarCollapsed, setSidebarCollapsed, openVenueDetail } = useApp();
+  const { user, logout, goTo, sidebarCollapsed, setSidebarCollapsed } = useApp();
   const [openGroups, setOpenGroups] = useState({});
   const [openSections, setOpenSections] = useState(() =>
     Object.fromEntries(FILTER_SECTIONS.map((section) => [section.title, false]))
   );
   const [currentTime, setCurrentTime] = useState("");
-  const [sessionSummary, setSessionSummary] = useState(null);
+  const [globalSearchInput, setGlobalSearchInput] = useState("");
 
   useEffect(() => {
     const updateTime = () => {
@@ -116,39 +116,6 @@ export default function Sidebar({
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!user?.user) {
-      return () => {};
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-
-    const loadSummary = async () => {
-      try {
-        const response = await fetch(
-          `${API}/session-summary?user=${encodeURIComponent(user.user)}&limit=6`,
-          { signal: controller.signal },
-        );
-        const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.success || cancelled) return;
-        setSessionSummary(data);
-      } catch (error) {
-        if (error?.name !== "AbortError" && !cancelled) {
-          setSessionSummary(null);
-        }
-      }
-    };
-
-    loadSummary();
-    const timer = setInterval(loadSummary, 30000);
-    return () => {
-      cancelled = true;
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [API, user?.user]);
-
   const isDynamic =
     !!filterOptions &&
     !!selectedFilters &&
@@ -164,34 +131,24 @@ export default function Sidebar({
     return `Logout (${user.user})`;
   }, [user]);
 
+  const globalSearchResults = useMemo(() => {
+    const resolver = globalSearchConfig?.resolve;
+    if (typeof resolver !== "function") return [];
+    return resolver(globalSearchInput);
+  }, [globalSearchConfig, globalSearchInput]);
+
+  const handleGlobalSearch = () => {
+    if (typeof globalSearchConfig?.onSearch === "function") {
+      globalSearchConfig.onSearch(globalSearchInput);
+    }
+  };
+
   const handleAdminButton = () => {
     if (!user) {
       goTo("login");
       return;
     }
     logout();
-  };
-
-  const canOpenVenueDetail = Boolean(user && ["Admin", "Prafull"].includes(user.user));
-  const venueSearchResults = venueSearchConfig?.results || [];
-  const venueSearchQuery = (venueSearchConfig?.query || "").trim();
-  const visibleSessionSummary = user?.user ? sessionSummary : null;
-
-  const formatSessionTime = (isoTime) => {
-    if (!isoTime) return "-";
-    const date = new Date(isoTime);
-    if (Number.isNaN(date.getTime())) return "-";
-    return date
-      .toLocaleString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: true,
-      })
-      .replace(",", "");
   };
 
   return (
@@ -220,99 +177,50 @@ export default function Sidebar({
               <span className="sidebar-welcome-dot" />
               {currentTime}
             </div>
-            {visibleSessionSummary ? (
-              <div className="session-summary">
-                <div className="session-summary-title">Login Summary</div>
-                <div className="session-summary-row">
-                  <span>Last Login</span>
-                  <strong>{formatSessionTime(visibleSessionSummary.lastLoginAt)}</strong>
-                </div>
-                <div className="session-summary-row">
-                  <span>Last Logout</span>
-                  <strong>{formatSessionTime(visibleSessionSummary.lastLogoutAt)}</strong>
-                </div>
-                <div className="session-summary-meta">
-                  Total Sessions: <strong>{visibleSessionSummary.totalSessions || 0}</strong>
-                </div>
-
-                {visibleSessionSummary.previousCompletedSession ? (
-                  <div className="session-summary-prev">
-                    Previous Session:
-                    <div>
-                      In: {formatSessionTime(visibleSessionSummary.previousCompletedSession.loginAt)}
-                    </div>
-                    <div>
-                      Out: {formatSessionTime(visibleSessionSummary.previousCompletedSession.logoutAt)}
-                    </div>
-                  </div>
-                ) : null}
-
-                {Array.isArray(visibleSessionSummary.recentSessions) && visibleSessionSummary.recentSessions.length ? (
-                  <div className="session-history-list">
-                    {visibleSessionSummary.recentSessions.slice(0, 3).map((entry) => (
-                      <div key={entry.sessionId || entry.loginAt} className="session-history-item">
-                        <div>In: {formatSessionTime(entry.loginAt)}</div>
-                        <div>Out: {entry.isActive ? "Active" : formatSessionTime(entry.logoutAt)}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
           </div>
         ) : null}
 
-        {venueSearchConfig ? (
-          <div className="search-card sidebar-venue-search">
-            <div className="search-title">Venue Search</div>
+        {globalSearchConfig ? (
+          <div className="sidebar-global-search">
+            <div className="search-title">Global Search</div>
             <div className="search-desc">
-              Search by venue name, DMS code, city, or keyword.
+              Search modules and records from one place.
             </div>
             <div className="search-flex">
               <input
-                type="text"
                 className="search-input"
-                placeholder={venueSearchConfig.placeholder || "Search venue..."}
-                value={venueSearchConfig.input || ""}
-                onChange={(event) => venueSearchConfig.onInputChange?.(event.target.value)}
+                value={globalSearchInput}
+                onChange={(event) => setGlobalSearchInput(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    venueSearchConfig.onSearch?.();
-                  }
+                  if (event.key === "Enter") handleGlobalSearch();
                 }}
+                placeholder={globalSearchConfig.placeholder || "Search modules, venues, state, city..."}
               />
-              <button className="search-btn" onClick={() => venueSearchConfig.onSearch?.()}>
-                Search Venue
-              </button>
+              <button className="search-btn" onClick={handleGlobalSearch}>Search</button>
             </div>
 
-            {venueSearchQuery ? (
-              <div className="search-results">
-                {venueSearchResults.slice(0, 6).map((row) => {
-                  const st = String(row.status || "").toUpperCase();
-                  const stClass = st === "ACTIVE" ? "search-status-active" : st.includes("BLACKLIST") ? "search-status-blacklisted" : "search-status-inactive";
-                  const stIcon = st === "ACTIVE" ? "OK" : st.includes("BLACKLIST") ? "!" : "-";
-                  return (
-                    <div key={row.dmsCode} className="search-result-row">
+            {globalSearchInput.trim() ? (
+              <div className="search-result-list">
+                {globalSearchResults.length ? (
+                  globalSearchResults.map((result) => (
+                    <div className="search-result-row" key={result.id}>
                       <div>
-                        <strong>{row.dmsCode}</strong> - {row.name || "Unnamed Venue"}
-                        <span className={`search-status-pill ${stClass}`} style={{ marginLeft: 8 }}>{stIcon} {row.status}</span>
-                        <div className="result-sub">{row.city}, {row.state} - Category: {row.category}</div>
+                        <div className="result-main">{result.title}</div>
+                        {result.subtitle ? <div className="result-sub">{result.subtitle}</div> : null}
                       </div>
                       <button
-                        className="search-result-btn"
-                        onClick={() => openVenueDetail(row.dmsCode)}
-                        disabled={!canOpenVenueDetail}
+                        className="btn-outline search-result-btn"
+                        onClick={() => {
+                          if (typeof result.onSelect === "function") result.onSelect();
+                        }}
                       >
-                        View
+                        Open
                       </button>
                     </div>
-                  );
-                })}
-                {venueSearchResults.length > 6 ? (
-                  <div className="result-sub">Showing first 6 matches</div>
-                ) : null}
+                  ))
+                ) : (
+                  <div className="search-empty">No results found.</div>
+                )}
               </div>
             ) : null}
           </div>
@@ -324,7 +232,7 @@ export default function Sidebar({
           </button>
         ) : (
           <button className="btn-outline" onClick={() => goTo("dashboard")}>
-            Back To Dashboard
+            Back to Dashboard
           </button>
         )}
 
