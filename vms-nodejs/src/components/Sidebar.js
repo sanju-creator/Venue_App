@@ -95,7 +95,7 @@ export default function Sidebar({
   mobileOpen = false,
   onToggleMobile = () => {},
 }) {
-  const { user, logout, goTo, sidebarCollapsed, setSidebarCollapsed, fetchApi, setManpowerFilter, setSelectedVenueCode } = useApp();
+  const { user, logout, goTo, sidebarCollapsed, setSidebarCollapsed, fetchApi, setManpowerFilter, setSelectedVenueCode, page } = useApp();
   const [openGroups, setOpenGroups] = useState({});
   const [openSections, setOpenSections] = useState(() =>
     Object.fromEntries(FILTER_SECTIONS.map((section) => [section.title, false]))
@@ -168,6 +168,23 @@ export default function Sidebar({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [globalSearchModalOpen]);
+
+  useEffect(() => {
+    if (!globalSearchConfig || page !== "dashboard" || typeof window === "undefined") return;
+    try {
+      const raw = sessionStorage.getItem("vms_global_search_restore");
+      if (!raw) return;
+      const payload = JSON.parse(raw);
+      const restoredQuery = String(payload?.query || "").trim();
+      if (!restoredQuery) return;
+      setGlobalSearchInput(restoredQuery);
+      setGlobalSearchQuery(restoredQuery);
+      setGlobalSearchModalOpen(payload?.openModal !== false);
+      sessionStorage.removeItem("vms_global_search_restore");
+    } catch {
+      // Ignore storage parsing failures.
+    }
+  }, [globalSearchConfig, page]);
 
   const handleGlobalSearch = async () => {
     const query = String(globalSearchInput || "").trim();
@@ -416,6 +433,22 @@ export default function Sidebar({
                     <button
                       className="search-result-btn"
                       onClick={() => {
+                        const resultId = String(result?.id || "");
+                        const isManpowerNavigation =
+                          resultId === "module-manpower" ||
+                          resultId.startsWith("manpower-") ||
+                          resultId.startsWith("fallback-person-");
+                        if (isManpowerNavigation && typeof window !== "undefined") {
+                          const payload = {
+                            query: String(globalSearchQuery || "").trim(),
+                            openModal: true,
+                          };
+                          try {
+                            sessionStorage.setItem("vms_manpower_return_global_search", JSON.stringify(payload));
+                          } catch {
+                            // Ignore storage failures and continue navigation.
+                          }
+                        }
                         if (typeof result.onSelect === "function") result.onSelect();
                         setGlobalSearchModalOpen(false);
                       }}

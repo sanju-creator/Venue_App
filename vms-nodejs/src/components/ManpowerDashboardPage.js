@@ -1164,6 +1164,7 @@ export default function ManpowerDashboardPage() {
   const [performanceBusy, setPerformanceBusy] = useState(false);
   const [performanceError, setPerformanceError] = useState("");
   const [lastQueryPayload, setLastQueryPayload] = useState(null);
+  const [returnToGlobalSearchQuery, setReturnToGlobalSearchQuery] = useState("");
 
   // Unified Hierarchical Drilldown Path for Manpower
   const [drilldownPath, setDrilldownPath] = useState({
@@ -1222,6 +1223,19 @@ export default function ManpowerDashboardPage() {
       permissionList.includes("performance_rankings_view")
     );
   }, [user]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = sessionStorage.getItem("vms_manpower_return_global_search");
+      if (!raw) return;
+      const payload = JSON.parse(raw);
+      const query = String(payload?.query || "").trim();
+      if (query) setReturnToGlobalSearchQuery(query);
+    } catch {
+      // Ignore parsing failures.
+    }
+  }, []);
 
   const loadPerformanceRankings = useCallback(
     async (queryPayload, scopeOverride = performanceScope) => {
@@ -2557,15 +2571,40 @@ export default function ManpowerDashboardPage() {
     });
   };
 
+  const handleBackToSearchResults = () => {
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(
+          "vms_global_search_restore",
+          JSON.stringify({
+            query: returnToGlobalSearchQuery,
+            openModal: true,
+          }),
+        );
+        sessionStorage.removeItem("vms_manpower_return_global_search");
+      } catch {
+        // Ignore storage failures and continue navigation.
+      }
+    }
+    goTo("dashboard");
+  };
+
   return (
     <div className="mp-page">
       <div className="mp-header">
         <div>
           <h1 className="mp-title">Manpower Dashboard</h1>
         </div>
-        <button className="mp-back-btn" onClick={() => goTo("dashboard")}>
-          Back to Dashboard
-        </button>
+        <div className="mp-header-actions">
+          {returnToGlobalSearchQuery ? (
+            <button className="mp-back-small-btn is-active" onClick={handleBackToSearchResults}>
+              Back to Search Results
+            </button>
+          ) : null}
+          <button className="mp-back-btn" onClick={() => goTo("dashboard")}>
+            Back to Dashboard
+          </button>
+        </div>
       </div>
 
       <div className="mp-filter-card">

@@ -2518,6 +2518,12 @@ select {
   margin-bottom: 18px;
 }
 
+.mp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .mp-title {
   margin: 0;
   color: #24324a;
@@ -5383,5 +5389,11 @@ select {
 
   .occupancy-list-row {
     grid-template-columns: 1fr;
+  }
+
+  .mp-header-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
   }
 }
