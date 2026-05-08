@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -49,6 +49,140 @@ const DEFAULT_FILTERS = {
 };
 
 const numberFormat = new Intl.NumberFormat("en-IN");
+
+function getRankingLimit(scope) {
+  if (scope === "top25") return 25;
+  if (scope === "full") return Number.POSITIVE_INFINITY;
+  return 10;
+}
+
+function toRankNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function calcPerformanceScore({ totalBatches = 0, noDelay = 0, callLogs = 0, coverage = 0 }) {
+  const quality = noDelay * 2.2;
+  const productivity = totalBatches * 1.15;
+  const coverageBoost = coverage * 3.8;
+  const issuePenalty = callLogs * 2.1;
+  const raw = quality + productivity + coverageBoost - issuePenalty;
+  return Number(Math.max(0, raw).toFixed(2));
+}
+
+function buildLocalPerformanceRankings(queryResult, scope = "top10") {
+  const limit = getRankingLimit(scope);
+
+  const manpowerSourceRows = Array.isArray(queryResult?.manpowerWiseEmployeeRotationDrilldown)
+    ? queryResult.manpowerWiseEmployeeRotationDrilldown
+    : [];
+  const venueSourceRows = Array.isArray(queryResult?.manpowerWiseVenueDrilldown)
+    ? queryResult.manpowerWiseVenueDrilldown
+    : [];
+  const projectSourceRows = Array.isArray(queryResult?.projectSummary)
+    ? queryResult.projectSummary
+    : [];
+
+  const manpowerMap = new Map();
+  manpowerSourceRows.forEach((row) => {
+    const personName = String(row?.personName || "").trim();
+    const empId = String(row?.empId || "").trim();
+    const key = `${empId || "NA"}||${personName || "Unknown"}`;
+    if (!manpowerMap.has(key)) {
+      manpowerMap.set(key, {
+        personName: personName || "Unknown",
+        empId: empId || "-",
+        venueSet: new Set(),
+        totalBatches: 0,
+        noDelay: 0,
+        callLogs: 0,
+      });
+    }
+    const entry = manpowerMap.get(key);
+    if (row?.dmsCode) entry.venueSet.add(String(row.dmsCode).trim());
+    entry.totalBatches += toRankNumber(row?.totalBatches);
+    entry.noDelay += toRankNumber(row?.noDelay);
+    entry.callLogs += toRankNumber(row?.callLogs);
+  });
+
+  const manpower = Array.from(manpowerMap.values())
+    .map((entry) => {
+      const venueCoverage = entry.venueSet.size;
+      return {
+        personName: entry.personName,
+        empId: entry.empId,
+        venueCoverage,
+        totalBatches: entry.totalBatches,
+        noDelay: entry.noDelay,
+        callLogs: entry.callLogs,
+        score: calcPerformanceScore({
+          totalBatches: entry.totalBatches,
+          noDelay: entry.noDelay,
+          callLogs: entry.callLogs,
+          coverage: venueCoverage,
+        }),
+      };
+    })
+    .sort((a, b) => (b.score - a.score) || (b.totalBatches - a.totalBatches) || a.personName.localeCompare(b.personName, "en", { sensitivity: "base" }));
+
+  const venues = venueSourceRows
+    .map((row) => {
+      const uniqueManpower = toRankNumber(row?.uniqueManpower);
+      const noBatchDelay = toRankNumber(row?.noDelay);
+      const callLogs = toRankNumber(row?.callLogs);
+      const totalBatches = toRankNumber(row?.totalBatches);
+      return {
+        venueName: String(row?.venueName || "").trim() || "-",
+        dmsCode: String(row?.dmsCode || "").trim() || "-",
+        uniqueManpower,
+        noBatchDelay,
+        callLogs,
+        score: calcPerformanceScore({
+          totalBatches,
+          noDelay: noBatchDelay,
+          callLogs,
+          coverage: uniqueManpower,
+        }),
+      };
+    })
+    .sort((a, b) => (b.score - a.score) || (b.uniqueManpower - a.uniqueManpower) || a.venueName.localeCompare(b.venueName, "en", { sensitivity: "base" }));
+
+  const projects = projectSourceRows
+    .map((row) => {
+      const driveCount = toRankNumber(row?.driveCount);
+      const uniqueManpower = toRankNumber(row?.uniqueManpower);
+      const noBatchDelay = toRankNumber(row?.noBatchDelay);
+      const callLogs = toRankNumber(row?.callLogs);
+      return {
+        projectName: String(row?.projectName || "").trim() || "-",
+        driveCount,
+        uniqueManpower,
+        noBatchDelay,
+        callLogs,
+        score: calcPerformanceScore({
+          totalBatches: driveCount,
+          noDelay: noBatchDelay,
+          callLogs,
+          coverage: uniqueManpower,
+        }),
+      };
+    })
+    .sort((a, b) => (b.score - a.score) || (b.driveCount - a.driveCount) || a.projectName.localeCompare(b.projectName, "en", { sensitivity: "base" }));
+
+  return {
+    success: true,
+    scope,
+    source: "local-fallback",
+    totals: {
+      manpower: manpower.length,
+      venues: venues.length,
+      projects: projects.length,
+    },
+    manpower: manpower.slice(0, limit),
+    venues: venues.slice(0, limit),
+    projects: projects.slice(0, limit),
+  };
+}
 
 function RegionCategoryTable({ rows, onCellClick }) {
   return (
@@ -994,6 +1128,8 @@ function parsePersonDetailStats(personDetails) {
 export default function ManpowerDashboardPage() {
   const { fetchApi, goTo, selectedVenueCode, setSelectedVenueCode, manpowerFilter, setManpowerFilter, openVenueDetail, user } = useApp();
   const [search, setSearch] = useState("");
+  const [focusEmpId, setFocusEmpId] = useState("");
+  const [focusPersonName, setFocusPersonName] = useState("");
   const [employeeTypes, setEmployeeTypes] = useState([...EMPLOYEE_TYPES]);
   const [dateMode, setDateMode] = useState(DATE_MODES.all);
   const [dateFrom, setDateFrom] = useState("");
@@ -1017,6 +1153,7 @@ export default function ManpowerDashboardPage() {
   const [personCompareOpen, setPersonCompareOpen] = useState(false);
   const [comparePersonLeft, setComparePersonLeft] = useState("");
   const [comparePersonRight, setComparePersonRight] = useState("");
+  const hasBootstrappedQueryRef = useRef(false);
   const [selectedCategoryCallLog, setSelectedCategoryCallLog] = useState("");
   const [selectedTrendVenue, setSelectedTrendVenue] = useState(null);
   const [selectedPersonDrilldown, setSelectedPersonDrilldown] = useState(null);
@@ -1108,13 +1245,20 @@ export default function ManpowerDashboardPage() {
         });
         setPerformanceRankings(data);
       } catch (err) {
-        setPerformanceRankings(null);
-        setPerformanceError(err.message || "Unable to load performance rankings.");
+        const message = String(err?.message || "");
+        if (message.includes("(404)") && result) {
+          const fallbackRankings = buildLocalPerformanceRankings(result, scopeOverride);
+          setPerformanceRankings(fallbackRankings);
+          setPerformanceError("");
+        } else {
+          setPerformanceRankings(null);
+          setPerformanceError(message || "Unable to load performance rankings.");
+        }
       } finally {
         setPerformanceBusy(false);
       }
     },
-    [canViewPerformanceRankings, fetchApi, performanceScope, user],
+    [canViewPerformanceRankings, fetchApi, performanceScope, result, user],
   );
 
   const runQuery = useCallback(async (payload) => {
@@ -1124,6 +1268,8 @@ export default function ManpowerDashboardPage() {
     try {
       const requestBody = payload || {
         search: search.trim(),
+        focusEmpId,
+        personName: focusPersonName,
         employeeTypes,
         projects: filters.project ? [filters.project] : [],
         employees: filters.employee ? [filters.employee] : [],
@@ -1161,47 +1307,130 @@ export default function ManpowerDashboardPage() {
       setSelectedTrendVenue(null);
       setStateCompareSelection({ leftState: "", rightState: "" });
       setSelectedPersonDrilldown(null);
+      return data;
     } catch (err) {
       setError(err.message || "Failed to load manpower dashboard");
       setPerformanceRankings(null);
+      return null;
     } finally {
       setBusy(false);
     }
-  }, [dateFrom, dateMode, dateTo, employeeTypes, fetchApi, filters, search]);
+  }, [dateFrom, dateMode, dateTo, employeeTypes, fetchApi, filters, search, focusEmpId, focusPersonName]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      let initialSearch = "";
-      if (manpowerFilter?.search) {
-        initialSearch = String(manpowerFilter.search || "");
-        setSearch(initialSearch);
-        setManpowerFilter(null);
-      } else if (manpowerFilter?.dmsCode) {
-        initialSearch = manpowerFilter.dmsCode;
-        setSearch(initialSearch);
-        setManpowerFilter(null);
-      } else if (selectedVenueCode) {
-        initialSearch = selectedVenueCode;
-        setSearch(initialSearch);
-        setSelectedVenueCode("");
+    const hasPersonSearch = (payload) =>
+      Boolean(
+        String(payload?.search || "").trim() ||
+        String(payload?.focusEmpId || "").trim() ||
+        String(payload?.personName || "").trim(),
+      );
+    const hasAnyManpowerFilter = (payload) =>
+      hasPersonSearch(payload) || Boolean(String(payload?.dmsCode || "").trim());
+    const readPendingManpowerFilter = () => {
+      if (typeof window === "undefined") return null;
+      try {
+        const raw = sessionStorage.getItem("vms_pending_manpower_filter");
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch {
+        return null;
       }
+    };
+    const clearPendingManpowerFilter = () => {
+      if (typeof window === "undefined") return;
+      try {
+        sessionStorage.removeItem("vms_pending_manpower_filter");
+      } catch {
+        // Ignore storage failures.
+      }
+    };
 
-      runQuery({
-        search: initialSearch.trim(),
-        employeeTypes: [...EMPLOYEE_TYPES],
-        projects: [],
-        employees: [],
-        tenure: [],
-        roles: [],
-        regions: [],
-        states: [],
-        examCityCentres: [],
-      });
+    const pendingManpowerFilter = !hasAnyManpowerFilter(manpowerFilter)
+      ? readPendingManpowerFilter()
+      : null;
+    const effectiveFilter = hasAnyManpowerFilter(manpowerFilter)
+      ? manpowerFilter
+      : (hasAnyManpowerFilter(pendingManpowerFilter) ? pendingManpowerFilter : null);
+
+    let searchCandidates = [];
+    // Track whether we need to clear context state AFTER the query runs,
+    // rather than before (which would trigger a re-render and cancel the timer).
+    let needsClearManpowerFilter = false;
+    let needsClearVenueCode = false;
+
+    let exactEmpId = "";
+    let personName = "";
+
+    if (hasPersonSearch(effectiveFilter)) {
+      exactEmpId = String(effectiveFilter?.focusEmpId || "").trim();
+      const primary = String(effectiveFilter?.search || "").trim();
+      personName = String(effectiveFilter?.personName || "").trim();
+      searchCandidates = Array.from(new Set([personName, primary, exactEmpId].filter(Boolean)));
+      setSearch(searchCandidates[0] || "");
+      setFocusEmpId(exactEmpId);
+      setFocusPersonName(personName);
+      needsClearManpowerFilter = hasAnyManpowerFilter(manpowerFilter);
+      clearPendingManpowerFilter();
+      needsClearVenueCode = Boolean(selectedVenueCode);
+      hasBootstrappedQueryRef.current = true;
+    } else if (effectiveFilter?.dmsCode) {
+      searchCandidates = [String(effectiveFilter.dmsCode || "").trim()].filter(Boolean);
+      setSearch(searchCandidates[0] || "");
+      needsClearManpowerFilter = hasAnyManpowerFilter(manpowerFilter);
+      clearPendingManpowerFilter();
+      needsClearVenueCode = Boolean(selectedVenueCode);
+      hasBootstrappedQueryRef.current = true;
+    } else if (selectedVenueCode) {
+      searchCandidates = [String(selectedVenueCode || "").trim()].filter(Boolean);
+      setSearch(searchCandidates[0] || "");
+      needsClearVenueCode = true;
+      clearPendingManpowerFilter();
+      hasBootstrappedQueryRef.current = true;
+    } else if (!hasBootstrappedQueryRef.current) {
+      searchCandidates = [""];
+      clearPendingManpowerFilter();
+      hasBootstrappedQueryRef.current = true;
+    } else {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const candidates = searchCandidates.length ? searchCandidates : [""];
+      for (const candidate of candidates) {
+        if (cancelled) return;
+        const cleanCandidate = String(candidate || "").trim();
+        setSearch(cleanCandidate);
+        setFocusEmpId(exactEmpId);
+        setFocusPersonName(personName);
+        const data = await runQuery({
+          search: cleanCandidate,
+          focusEmpId: exactEmpId,
+          personName: personName,
+          employeeTypes: [...EMPLOYEE_TYPES],
+          projects: [],
+          employees: [],
+          tenure: [],
+          roles: [],
+          regions: [],
+          states: [],
+          examCityCentres: [],
+        });
+        if (cancelled) return;
+        const rowCount = Number(data?.rowCount || data?.dedupedCount || 0);
+        if (rowCount > 0) break;
+      }
+      // Clear context state AFTER the query has completed, so the state
+      // change does not trigger a re-render that cancels this timer.
+      if (!cancelled) {
+        if (needsClearManpowerFilter) setManpowerFilter(null);
+        if (needsClearVenueCode) setSelectedVenueCode("");
+      }
     }, 0);
     return () => {
+      cancelled = true;
       clearTimeout(timer);
-      setManpowerFilter(null);
-      setSelectedVenueCode("");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manpowerFilter, selectedVenueCode]);
@@ -2291,6 +2520,8 @@ export default function ManpowerDashboardPage() {
 
   const handleResetFilters = () => {
     setSearch("");
+    setFocusEmpId("");
+    setFocusPersonName("");
     setEmployeeTypes([...EMPLOYEE_TYPES]);
     setDateMode(DATE_MODES.all);
     setDateFrom("");
@@ -2354,7 +2585,11 @@ export default function ManpowerDashboardPage() {
                 className="mp-input"
                 placeholder="Search by name, ID, or phone..."
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setFocusEmpId("");
+                  setFocusPersonName("");
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
@@ -2491,7 +2726,7 @@ export default function ManpowerDashboardPage() {
             return (
               <div 
                 key={card.key} 
-                data-tooltip="View details"
+                data-tooltip="Click to drill down"
                 className={`mp-kpi-card mp-kpi-clickable${drilldownPath.metric === card.key ? ' active' : ''}${severityClass}`} 
                 style={{ "--card-color": card.color }}
                 onClick={() => {
@@ -2504,7 +2739,7 @@ export default function ManpowerDashboardPage() {
               >
                 <div className="mp-kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
                 <div className="mp-kpi-value">{formatCount(card.value)}</div>
-                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "Hide details" : "View details"}</div>
+                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "Hide details" : "Drill down"}</div>
               </div>
             );
           })}
@@ -3640,4 +3875,3 @@ export default function ManpowerDashboardPage() {
     </div>
   );
 }
-

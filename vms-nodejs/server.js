@@ -98,6 +98,7 @@ const HEADER_HINTS = ["ROW LABELS", "VENUE_TYPE", "CODE", "ACTIVE", "DMS_CODE", 
 
 let dashboardCache = null;
 let occupancyCache = null;
+let occupancyDataCache = null;
 
 function cleanText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -163,6 +164,11 @@ function normalizeRowKeys(row) {
 
 function toNumber(value) {
   const number = Number(String(value ?? "").replace(/,/g, ""));
+  return Number.isFinite(number) ? number : 0;
+}
+
+function toPercentNumber(value) {
+  const number = Number(String(value ?? "").replace(/,/g, "").replace(/%/g, ""));
   return Number.isFinite(number) ? number : 0;
 }
 
@@ -1527,6 +1533,86 @@ function getOccupancyMap() {
   return map;
 }
 
+function getOccupancyDataFilePath() {
+  const candidates = [
+    "DOTC Occupancy.xlsx",
+    "Occupancy Report FY25-26 March.xlsx",
+  ];
+  return candidates.map((fileName) => path.join(DATA_PATH, fileName)).find((filePath) => fs.existsSync(filePath)) || null;
+}
+
+function buildOccupancyDataset() {
+  const filePath = getOccupancyDataFilePath();
+  if (!filePath) {
+    return {
+      filePath: null,
+      fileName: "",
+      rows: [],
+      summary: {
+        totalRows: 0,
+        totalCenters: 0,
+        totalSeatCapacity: 0,
+        totalSeatOccupancy: 0,
+        averageOccupancyPercent: 0,
+      },
+      months: [],
+      headers: [],
+    };
+  }
+
+  const rawRows = readWorkbookSmart(filePath).rows;
+  const rows = rawRows
+    .map((row) => {
+      const normalized = normalizeRowKeys(row);
+      const rawSeatCapacity = row["Seat Capacity"];
+      const rawSeatOccupancy = row["Seat Occupancy"];
+      const rawOccupancyPercent = row["Seat Occupancy %"];
+      const dmsCode = cleanDms(normalized.dms_code || normalized.center_code || normalized.venue_code);
+      const seatCapacity = toNumber(rawSeatCapacity || normalized.seat_capacity || normalized.capacity);
+      const seatOccupancy = toNumber(rawSeatOccupancy || normalized.occupancy);
+      const occupancyPercent = toPercentNumber(
+        rawOccupancyPercent ||
+          normalized.seat_occupancy_ ||
+          normalized.seat_occupancy_percent ||
+          normalized.occupancy_percent ||
+          normalized.seat_occupancy ||
+          normalized.occupancy_pct,
+      );
+
+      return {
+        month: cleanText(normalized.month || normalized.monthly),
+        dmsCode,
+        examCenter: cleanText(normalized.exam_center || normalized.center_name || normalized.venue_name),
+        seatCapacity,
+        seatOccupancy,
+        occupancyPercent,
+        utilizationGap: Math.max(seatCapacity - seatOccupancy, 0),
+      };
+    })
+    .filter((row) => row.month || row.dmsCode || row.examCenter);
+
+  const totalSeatCapacity = rows.reduce((sum, row) => sum + row.seatCapacity, 0);
+  const totalSeatOccupancy = rows.reduce((sum, row) => sum + row.seatOccupancy, 0);
+  const averageOccupancyPercent = totalSeatCapacity
+    ? Math.round((totalSeatOccupancy / totalSeatCapacity) * 1000) / 10
+    : 0;
+
+  return {
+    filePath,
+    fileName: path.basename(filePath),
+    rows,
+    summary: {
+      totalRows: rows.length,
+      totalCenters: new Set(rows.map((row) => row.dmsCode).filter(Boolean)).size,
+      totalSeatCapacity,
+      totalSeatOccupancy,
+      averageOccupancyPercent,
+    },
+    months: Array.from(new Set(rows.map((row) => row.month).filter(Boolean))),
+    headers: ["month", "dmsCode", "examCenter", "seatCapacity", "seatOccupancy", "occupancyPercent", "utilizationGap"],
+  };
+}
+
 function listVenuePhotos(dmsCode) {
   if (!fs.existsSync(PHOTOS_PATH)) return [];
   const prefix = cleanDms(dmsCode);
@@ -1628,6 +1714,8 @@ function runManpowerQuery(filters = {}) {
 
   const rows = workbook.rows.map((row) => normalizeRowKeys(row));
   const search = cleanText(filters.search || "").toLowerCase();
+  const focusEmpId = cleanText(filters.focusEmpId || "").toLowerCase();
+  const personName = cleanText(filters.personName || "").toLowerCase();
   const selectedEmployeeTypes = Array.isArray(filters.employeeTypes)
     ? filters.employeeTypes
     : ["DEXIT", "Outsourced"];
@@ -1656,7 +1744,21 @@ function runManpowerQuery(filters = {}) {
   const dmsKey = rows.length && Object.keys(rows[0]).includes("dms_code") ? "dms_code" : "center_code";
 
   const filtered = rows.filter((row) => {
-    if (search) {
+    if (focusEmpId || personName) {
+      let match = false;
+      const rowEmpId = cleanText(row.emp_id).toLowerCase();
+      const rowName = cleanText(row.name).toLowerCase();
+      
+      if (focusEmpId && rowEmpId === focusEmpId) {
+        match = true;
+      } else if (personName && rowName.includes(personName)) {
+        match = true;
+      } else if (focusEmpId && rowName.includes(focusEmpId)) {
+        match = true;
+      }
+      
+      if (!match) return false;
+    } else if (search) {
       const haystack = Object.values(row).map((value) => String(value)).join(" ").toLowerCase();
       if (!haystack.includes(search)) return false;
     }
@@ -3382,6 +3484,26 @@ app.get("/api/process/history", (req, res) => {
     };
   });
   return res.json({ count: files.length, files });
+});
+
+app.get("/api/occupancy/data", (req, res) => {
+  try {
+    const filePath = getOccupancyDataFilePath();
+    if (!filePath) {
+      return res.status(404).json({ error: "Occupancy data file not found" });
+    }
+    const stat = fs.statSync(filePath);
+    if (occupancyDataCache && occupancyDataCache.mtimeMs === stat.mtimeMs) {
+      return res.json({ success: true, ...occupancyDataCache.payload });
+    }
+
+    const payload = buildOccupancyDataset();
+
+    occupancyDataCache = { mtimeMs: stat.mtimeMs, payload };
+    return res.json({ success: true, ...payload });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 app.post("/api/manpower/query", (req, res) => {

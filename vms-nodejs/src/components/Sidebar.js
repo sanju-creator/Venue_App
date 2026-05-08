@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { ChevronRight, ChevronsLeft } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 
@@ -74,6 +74,12 @@ function QuickActions() {
       >
         DATC &amp; DOTC Inventory Dashboard
       </button>
+      <button
+        className="btn-outline"
+        onClick={() => goTo("occupancy_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] })}
+      >
+        Occupancy Details
+      </button>
     </>
   );
 }
@@ -89,13 +95,18 @@ export default function Sidebar({
   mobileOpen = false,
   onToggleMobile = () => {},
 }) {
-  const { user, logout, goTo, sidebarCollapsed, setSidebarCollapsed } = useApp();
+  const { user, logout, goTo, sidebarCollapsed, setSidebarCollapsed, fetchApi, setManpowerFilter, setSelectedVenueCode } = useApp();
   const [openGroups, setOpenGroups] = useState({});
   const [openSections, setOpenSections] = useState(() =>
     Object.fromEntries(FILTER_SECTIONS.map((section) => [section.title, false]))
   );
   const [currentTime, setCurrentTime] = useState("");
   const [globalSearchInput, setGlobalSearchInput] = useState("");
+  const [globalSearchQuery, setGlobalSearchQuery] = useState("");
+  const [globalSearchModalOpen, setGlobalSearchModalOpen] = useState(false);
+  const [globalSearchBusy, setGlobalSearchBusy] = useState(false);
+  const [globalSearchFallbackResult, setGlobalSearchFallbackResult] = useState(null);
+  const [globalSearchFallbackError, setGlobalSearchFallbackError] = useState("");
 
   useEffect(() => {
     const updateTime = () => {
@@ -131,15 +142,89 @@ export default function Sidebar({
     return `Logout (${user.user})`;
   }, [user]);
 
-  const globalSearchResults = useMemo(() => {
+  const resolveGlobalSearch = useCallback((input) => {
     const resolver = globalSearchConfig?.resolve;
     if (typeof resolver !== "function") return [];
-    return resolver(globalSearchInput);
-  }, [globalSearchConfig, globalSearchInput]);
+    return resolver(input);
+  }, [globalSearchConfig]);
 
-  const handleGlobalSearch = () => {
+  const globalSearchResults = useMemo(() => {
+    return resolveGlobalSearch(globalSearchQuery);
+  }, [resolveGlobalSearch, globalSearchQuery]);
+
+  const mergedGlobalSearchResults = useMemo(() => {
+    if (!globalSearchFallbackResult) return globalSearchResults;
+    if (globalSearchResults.some((item) => item.id === globalSearchFallbackResult.id)) return globalSearchResults;
+    return [globalSearchFallbackResult, ...globalSearchResults];
+  }, [globalSearchFallbackResult, globalSearchResults]);
+
+  useEffect(() => {
+    if (!globalSearchModalOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setGlobalSearchModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [globalSearchModalOpen]);
+
+  const handleGlobalSearch = async () => {
+    const query = String(globalSearchInput || "").trim();
+    setGlobalSearchQuery(query);
+    setGlobalSearchModalOpen(Boolean(query));
+    setGlobalSearchFallbackResult(null);
+    setGlobalSearchFallbackError("");
+
     if (typeof globalSearchConfig?.onSearch === "function") {
-      globalSearchConfig.onSearch(globalSearchInput);
+      globalSearchConfig.onSearch(query);
+    }
+
+    if (!query) return;
+
+    const localResults = resolveGlobalSearch(query);
+    if (localResults.length > 0) return;
+
+    if (query.length < 2) return;
+
+    setGlobalSearchBusy(true);
+    try {
+      const lookup = await fetchApi(`manpower/person-lookup?name=${encodeURIComponent(query)}`);
+      const personName = String(lookup?.name || "").trim();
+      const empId = String(lookup?.empId || "").trim();
+      if (!personName && !empId) return;
+
+      setGlobalSearchFallbackResult({
+        id: `fallback-person-${empId || personName.toLowerCase()}`,
+        title: `${personName || "Unknown"}${empId ? ` (${empId})` : ""}`,
+        subtitle: `Matched via person lookup${lookup?.confidence ? ` | Confidence: ${lookup.confidence}` : ""}`,
+        onSelect: () => {
+          const token = empId || personName;
+          const payload = {
+            search: token,
+            focusEmpId: empId,
+            personName: personName || token,
+          };
+          setSelectedVenueCode("");
+          setManpowerFilter(payload);
+          if (typeof window !== "undefined") {
+            try {
+              sessionStorage.setItem("vms_pending_manpower_filter", JSON.stringify(payload));
+            } catch {
+              // Ignore storage failures and continue navigation.
+            }
+          }
+          setGlobalSearchModalOpen(false);
+          goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] });
+        },
+      });
+    } catch (error) {
+      const message = String(error?.message || "");
+      if (!message.includes("404")) {
+        setGlobalSearchFallbackError("Could not fetch person lookup right now.");
+      }
+    } finally {
+      setGlobalSearchBusy(false);
     }
   };
 
@@ -184,7 +269,7 @@ export default function Sidebar({
           <div className="sidebar-global-search">
             <div className="search-title">Global Search</div>
             <div className="search-desc">
-              Search modules and records from one place.
+              Search people, modules, and records from one place.
             </div>
             <div className="search-flex">
               <input
@@ -199,28 +284,14 @@ export default function Sidebar({
               <button className="search-btn" onClick={handleGlobalSearch}>Search</button>
             </div>
 
-            {globalSearchInput.trim() ? (
-              <div className="search-result-list">
-                {globalSearchResults.length ? (
-                  globalSearchResults.map((result) => (
-                    <div className="search-result-row" key={result.id}>
-                      <div>
-                        <div className="result-main">{result.title}</div>
-                        {result.subtitle ? <div className="result-sub">{result.subtitle}</div> : null}
-                      </div>
-                      <button
-                        className="btn-outline search-result-btn"
-                        onClick={() => {
-                          if (typeof result.onSelect === "function") result.onSelect();
-                        }}
-                      >
-                        Open
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="search-empty">No results found.</div>
-                )}
+            {globalSearchQuery ? (
+              <div className="global-search-status-pill">
+                {globalSearchBusy
+                  ? "Searching..."
+                  : `${mergedGlobalSearchResults.length} result${mergedGlobalSearchResults.length === 1 ? "" : "s"} for "${globalSearchQuery}"`}
+                <button className="global-search-status-open-btn" onClick={() => setGlobalSearchModalOpen(true)}>
+                  View
+                </button>
               </div>
             ) : null}
           </div>
@@ -316,6 +387,56 @@ export default function Sidebar({
           </button>
         </div>
       </aside>
+
+      {globalSearchModalOpen ? (
+        <div className="global-search-modal-backdrop" onClick={() => setGlobalSearchModalOpen(false)}>
+          <div className="global-search-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="global-search-modal-head">
+              <div>
+                <div className="global-search-modal-title">Global Search Results</div>
+                <div className="global-search-modal-subtitle">
+                  Query: "{globalSearchQuery || "N/A"}"
+                </div>
+              </div>
+              <button className="global-search-modal-close" onClick={() => setGlobalSearchModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            {globalSearchBusy ? (
+              <div className="global-search-modal-empty">Searching records...</div>
+            ) : mergedGlobalSearchResults.length ? (
+              <div className="global-search-modal-list">
+                {mergedGlobalSearchResults.map((result) => (
+                  <div className="global-search-modal-item" key={result.id}>
+                    <div className="global-search-modal-item-main">
+                      <div className="result-main">{result.title}</div>
+                      {result.subtitle ? <div className="result-sub">{result.subtitle}</div> : null}
+                    </div>
+                    <button
+                      className="search-result-btn"
+                      onClick={() => {
+                        if (typeof result.onSelect === "function") result.onSelect();
+                        setGlobalSearchModalOpen(false);
+                      }}
+                    >
+                      Open
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="global-search-modal-empty">
+                No results found. Try full name, employee ID, venue code, city, state, or project name.
+              </div>
+            )}
+
+            {globalSearchFallbackError ? (
+              <div className="global-search-modal-error">{globalSearchFallbackError}</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

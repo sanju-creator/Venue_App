@@ -10,6 +10,7 @@ import VenueDetailPage from "@/components/VenueDetailPage";
 import ManpowerDashboardPage from "@/components/ManpowerDashboardPage";
 import CityDatcDotcPage from "@/components/CityDatcDotcPage";
 import MasterVenueCoverageMapPage from "@/components/MasterVenueCoverageMapPage";
+import OccupancyDashboardPage from "@/components/OccupancyDashboardPage";
 
 function FullPageLoader() {
   return (
@@ -60,6 +61,10 @@ function AppShell() {
   if (page === "master_map") {
     if (!user || !["Admin", "Prafull"].includes(user.user)) return <LoginPage />;
     return <><AccessNotice text={notice} /><MasterVenueCoverageMapPage /></>;
+  }
+  if (page === "occupancy_dashboard") {
+    if (!user || !["Admin", "Prafull"].includes(user.user)) return <LoginPage />;
+    return <><AccessNotice text={notice} /><OccupancyDashboardPage /></>;
   }
 
   return <Dashboard />;

@@ -45,6 +45,13 @@ const CATEGORY_COLORS = {
   "BL-C": "#ddb6ef",
   BL: "#f1b6b6",
 };
+const CATEGORY_CHIP_STYLES = {
+  A: { bg: "#edf9ee", border: "#b6e8b2", text: "#2f6f36", dot: "#6abf76" },
+  B: { bg: "#ebf7fc", border: "#8fcbdf", text: "#245f7b", dot: "#4ba7c8" },
+  C: { bg: "#fff8dd", border: "#f2df7c", text: "#7a6112", dot: "#d7b83b" },
+  BL: { bg: "#fff0f0", border: "#f1b6b6", text: "#8d3434", dot: "#dc6a6a" },
+  "BL-C": { bg: "#f8effd", border: "#ddb6ef", text: "#704285", dot: "#b06ed1" },
+};
 
 const STATUS_COLORS = {
   ACTIVE: "#79c6e6",
@@ -216,6 +223,10 @@ function formatCount(value) {
   return numberFormat.format(toNumber(value));
 }
 
+function normalizeSearchToken(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function DashboardTable({ headers, rows, footerRow }) {
   const { openVenueDetail, openManpowerAnalytics } = useApp();
   const isNumericText = (value) => /^[\d,\s]+$/.test(String(value || "").trim());
@@ -263,7 +274,7 @@ function DashboardTable({ headers, rows, footerRow }) {
 }
 
 export default function Dashboard() {
-  const { API, openVenueDetail, openManpowerAnalytics, user, goTo, setMasterMapState, fetchApi } = useApp();
+  const { API, openVenueDetail, openManpowerAnalytics, user, goTo, setMasterMapState, fetchApi, setManpowerFilter, setSelectedVenueCode } = useApp();
 
   const [dashboardData, setDashboardData] = useState(null);
   const [busy, setBusy] = useState(true);
@@ -285,6 +296,15 @@ export default function Dashboard() {
   const [activePerspective, setActivePerspective] = useState("venue");
   const venuePerspectiveRef = useRef(null);
   const manpowerPerspectiveRef = useRef(null);
+
+  const persistPendingManpowerFilter = useCallback((payload) => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem("vms_pending_manpower_filter", JSON.stringify(payload || {}));
+    } catch {
+      // Ignore storage failures and continue navigation.
+    }
+  }, []);
 
   // Unified Hierarchical Drilldown Path
   const [drilldownPath, setDrilldownPath] = useState({
@@ -559,6 +579,54 @@ export default function Dashboard() {
     return rows.slice(0, 8);
   }, [manpowerSnapshot]);
 
+  const globalPersonDirectory = useMemo(() => {
+    const sourceRows = Array.isArray(manpowerSnapshot?.manpowerWiseEmployeeRotationDrilldown)
+      ? manpowerSnapshot.manpowerWiseEmployeeRotationDrilldown
+      : [];
+    const map = new Map();
+
+    sourceRows.forEach((row) => {
+      const personName = String(row?.personName || "").trim();
+      const empId = String(row?.empId || "").trim();
+      const phone = String(row?.phone || "").trim();
+      if (!personName && !empId) return;
+
+      const key = empId || personName.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          personName: personName || "Unknown",
+          empId,
+          phone,
+          roles: new Set(),
+          states: new Set(),
+          cities: new Set(),
+          dmsCodes: new Set(),
+          venueNames: new Set(),
+          totalRecords: 0,
+        });
+      }
+
+      const entry = map.get(key);
+      if (row?.role) entry.roles.add(String(row.role).trim());
+      if (row?.state) entry.states.add(String(row.state).trim());
+      if (row?.city) entry.cities.add(String(row.city).trim());
+      if (row?.dmsCode) entry.dmsCodes.add(String(row.dmsCode).trim());
+      if (row?.venueName) entry.venueNames.add(String(row.venueName).trim());
+      entry.totalRecords += Number(row?.records || 0) || 0;
+    });
+
+    return Array.from(map.values()).map((entry) => ({
+      ...entry,
+      rolesList: Array.from(entry.roles).filter(Boolean),
+      statesList: Array.from(entry.states).filter(Boolean),
+      citiesList: Array.from(entry.cities).filter(Boolean),
+      dmsCodeList: Array.from(entry.dmsCodes).filter(Boolean),
+      venueList: Array.from(entry.venueNames).filter(Boolean),
+      uniqueVenues: entry.venueNames.size,
+    }));
+  }, [manpowerSnapshot]);
+
   const categoryPieData = useMemo(() => {
     const total = filteredRows.length;
     return PIE_ORDER.map((category) => {
@@ -831,6 +899,13 @@ export default function Dashboard() {
         onSelect: () => goTo("city_datc_dotc", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] }),
       },
       {
+        id: "module-occupancy",
+        title: "Occupancy Details",
+        subtitle: "Open DOTC occupancy table",
+        keywords: "occupancy dotc seat usage utilisation utilization",
+        onSelect: () => goTo("occupancy_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] }),
+      },
+      {
         id: "module-master-map",
         title: "Master Coverage Map",
         subtitle: "Open India state coverage map",
@@ -856,7 +931,7 @@ export default function Dashboard() {
   );
 
   const resolveGlobalSearchResults = useCallback((input) => {
-    const query = String(input || "").trim().toLowerCase();
+    const query = normalizeSearchToken(input);
     if (!query) return [];
 
     const moduleMatches = globalModuleEntries
@@ -878,6 +953,20 @@ export default function Dashboard() {
         onSelect: () => openVenueDetail(row.dmsCode),
       }));
 
+    const regionMatches = uniqueSorted(rows.map((row) => row.region))
+      .filter((region) => region.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map((region) => ({
+        id: `region-${region}`,
+        title: `Region Focus: ${region}`,
+        subtitle: "Apply dashboard filter to this region",
+        onSelect: () => {
+          setTopFilters({ region, state: "", examCityCentre: "" });
+          setSearchInput("");
+          setSearchQuery("");
+        },
+      }));
+
     const stateMatches = uniqueSorted(rows.map((row) => row.state))
       .filter((state) => state.toLowerCase().includes(query))
       .slice(0, 5)
@@ -892,8 +981,155 @@ export default function Dashboard() {
         },
       }));
 
-    return [...moduleMatches, ...venueMatches, ...stateMatches].slice(0, 12);
-  }, [globalModuleEntries, openVenueDetail, rows]);
+    const districtMatches = uniqueSorted(rows.map((row) => row.district))
+      .filter((district) => district.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map((district) => ({
+        id: `district-${district}`,
+        title: `District Focus: ${district}`,
+        subtitle: "Filter venue search to this district",
+        onSelect: () => {
+          setSearchInput(district);
+          setSearchQuery(district.toLowerCase());
+        },
+      }));
+
+    const cityMatches = uniqueSorted(rows.map((row) => row.city))
+      .filter((city) => city.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map((city) => ({
+        id: `city-${city}`,
+        title: `City Focus: ${city}`,
+        subtitle: "Filter venue search to this city",
+        onSelect: () => {
+          setSearchInput(city);
+          setSearchQuery(city.toLowerCase());
+        },
+      }));
+
+    const examCityMatches = uniqueSorted(rows.map((row) => buildExamCityCentre(row)))
+      .filter((centre) => centre.toLowerCase().includes(query))
+      .slice(0, 5)
+      .map((centre) => ({
+        id: `exam-centre-${centre}`,
+        title: `Exam City Centre: ${centre}`,
+        subtitle: "Apply top filter to this exam city centre",
+        onSelect: () => {
+          setTopFilters((prev) => ({ ...prev, examCityCentre: centre }));
+          setSearchInput("");
+          setSearchQuery("");
+        },
+      }));
+
+    const statusMatches = STATUS_ORDER
+      .filter((status) => status.toLowerCase().includes(query))
+      .map((status) => ({
+        id: `status-${status}`,
+        title: `Status Filter: ${status}`,
+        subtitle: "Filter dashboard by status",
+        onSelect: () => {
+          setSelectedFilters((prev) => {
+            if (!prev) return prev;
+            return { ...prev, status: [status] };
+          });
+          setSearchInput("");
+          setSearchQuery("");
+        },
+      }));
+
+    const categoryMatches = CATEGORY_ORDER
+      .filter((category) => category.toLowerCase().includes(query))
+      .map((category) => ({
+        id: `category-${category}`,
+        title: `Category Filter: ${category}`,
+        subtitle: "Filter dashboard by venue category",
+        onSelect: () => {
+          setSelectedFilters((prev) => {
+            if (!prev) return prev;
+            return { ...prev, category: [category] };
+          });
+          setSearchInput("");
+          setSearchQuery("");
+        },
+      }));
+
+    const manpowerProjectMatches = (manpowerSnapshotProjectRows || [])
+      .filter((row) => String(row.projectName || "").toLowerCase().includes(query))
+      .slice(0, 6)
+      .map((row) => ({
+        id: `manpower-project-${row.projectName}`,
+        title: `Project: ${row.projectName || "-"}`,
+        subtitle: "Open manpower analytics for this project context",
+        onSelect: () => {
+          const payload = { search: String(row.projectName || "").trim() };
+          setSelectedVenueCode("");
+          setManpowerFilter(payload);
+          goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
+        },
+      }));
+
+    const manpowerPersonMatches = globalPersonDirectory
+      .filter((person) => {
+        const haystack = [
+          person.personName,
+          person.empId,
+          person.phone,
+          person.rolesList.join(" "),
+          person.statesList.join(" "),
+          person.citiesList.join(" "),
+          person.venueList.join(" "),
+          person.dmsCodeList.join(" "),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      })
+      .slice(0, 10)
+      .map((person) => {
+        const rolePreview = person.rolesList.slice(0, 2).join(", ") || "Role unavailable";
+        const locationPreview = [person.citiesList[0], person.statesList[0]].filter(Boolean).join(", ") || "Location unavailable";
+        const searchToken = String(person.empId || person.personName || "").trim();
+        return {
+          id: `manpower-person-${person.key}`,
+          title: `${person.personName}${person.empId ? ` (${person.empId})` : ""}`,
+          subtitle: `${rolePreview} | ${locationPreview} | Venues: ${person.uniqueVenues}`,
+          onSelect: () => {
+            const payload = {
+              search: searchToken,
+              focusEmpId: String(person.empId || "").trim(),
+              personName: person.personName,
+            };
+            setSelectedVenueCode("");
+            setManpowerFilter(payload);
+            persistPendingManpowerFilter(payload);
+            goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
+          },
+        };
+      });
+
+    const orderedResults = [
+      ...moduleMatches,
+      ...venueMatches,
+      ...manpowerPersonMatches,
+      ...manpowerProjectMatches,
+      ...regionMatches,
+      ...stateMatches,
+      ...districtMatches,
+      ...cityMatches,
+      ...examCityMatches,
+      ...statusMatches,
+      ...categoryMatches,
+    ];
+
+    const deduped = [];
+    const seen = new Set();
+    orderedResults.forEach((entry) => {
+      if (!entry || seen.has(entry.id)) return;
+      seen.add(entry.id);
+      deduped.push(entry);
+    });
+    return deduped.slice(0, 18);
+  }, [globalModuleEntries, globalPersonDirectory, goTo, manpowerSnapshotProjectRows, openVenueDetail, persistPendingManpowerFilter, rows, setManpowerFilter, setSelectedVenueCode]);
 
   const renderClickable = (val, onClick) => (
     <span className="clickable-cell" onClick={onClick}>
@@ -1103,7 +1339,7 @@ export default function Dashboard() {
         onClearAll={handleClearAll}
         onResetAll={handleResetAll}
         globalSearchConfig={{
-          placeholder: "Search module, venue, DMS, city, state...",
+          placeholder: "Search people, modules, venues, projects, geography...",
           resolve: resolveGlobalSearchResults,
         }}
         mobileOpen={mobileSidebarOpen}
@@ -1206,7 +1442,7 @@ export default function Dashboard() {
             return (
               <button
                 key={card.key}
-                data-tooltip="View details"
+                data-tooltip="Click to drill down"
                 className={`kpi-box with-view kpi-clickable${drilldownPath.key === card.key ? " kpi-active" : ""}${severityClass}`}
                 style={{ "--kpi-accent": card.color }}
                 onClick={() => {
@@ -1220,7 +1456,7 @@ export default function Dashboard() {
               >
                 <div className="kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
                 <div className="kpi-val">{formatCount(val)}</div>
-                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "View details"}</div>
+                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "Drill down"}</div>
               </button>
             );
           })}
@@ -1462,8 +1698,20 @@ export default function Dashboard() {
             </div>
             <div className="category-meaning-compact">
               {PIE_ORDER.filter((category) => categoryPieData.some((item) => item.name === category)).map((category) => (
-                <span key={`category-meaning-${category}`} className="category-meaning-chip">
-                  <strong>{category}</strong>: {CATEGORY_MEANINGS[category]}
+                <span
+                  key={`category-meaning-${category}`}
+                  className="category-meaning-chip"
+                  style={{
+                    backgroundColor: CATEGORY_CHIP_STYLES[category]?.bg || "#f7fbff",
+                    borderColor: CATEGORY_CHIP_STYLES[category]?.border || "#d7e4f2",
+                    color: CATEGORY_CHIP_STYLES[category]?.text || "#334155",
+                  }}
+                >
+                  <span
+                    className="category-meaning-dot"
+                    style={{ backgroundColor: CATEGORY_CHIP_STYLES[category]?.dot || "#64748b" }}
+                  />
+                  <strong style={{ color: CATEGORY_CHIP_STYLES[category]?.text || "#334155" }}>{category}</strong>: {CATEGORY_MEANINGS[category]}
                 </span>
               ))}
             </div>
@@ -1881,8 +2129,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
-
-
-
-

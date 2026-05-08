@@ -271,12 +271,20 @@ export default function VenueDetailPage() {
     const openManpowerPageForPerson = (resolvedEmpId = "", resolvedName = cleanName) => {
       const searchToken = String(resolvedEmpId || resolvedName || "").trim();
       if (!searchToken) return;
-      setManpowerFilter({
+      const payload = {
         search: searchToken,
         dmsCode: currentVenueCode || "",
         focusEmpId: String(resolvedEmpId || "").trim(),
         personName: String(resolvedName || "").trim(),
-      });
+      };
+      setManpowerFilter(payload);
+      if (typeof window !== "undefined") {
+        try {
+          sessionStorage.setItem("vms_pending_manpower_filter", JSON.stringify(payload));
+        } catch {
+          // Ignore storage failures and continue navigation.
+        }
+      }
       goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] });
     };
 
@@ -1389,16 +1397,16 @@ export default function VenueDetailPage() {
 
             <div className="venue-card" style={{ marginTop: "24px" }}>
               <div className="venue-card-title">
-                Market Research & Source Summary
+                Market Information & Source Summary
                 <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
-                  Venue-Wise researched summary with verified source links
+                  Venue-wise intelligence summary with verified source links
                 </span>
               </div>
               {marketResearch ? (
                 <div className="market-research-panel">
                   <div className="market-simple-grid">
                     <div className="market-simple-card">
-                      <div className="market-research-subtitle">Overall Summary</div>
+                      <div className="market-research-subtitle">Market Intelligence Summary</div>
                       {marketExecutiveBrief ? (
                         <>
                           <div className="market-exec-title">{marketExecutiveBrief.title}</div>
@@ -1425,7 +1433,7 @@ export default function VenueDetailPage() {
                     </div>
 
                     <div className="market-simple-card">
-                      <div className="market-research-subtitle">Source Of Info</div>
+                      <div className="market-research-subtitle">Verified Sources</div>
                       {(marketResearch.sources || []).length ? (
                         <div className="market-source-list">
                           {marketResearch.sources.map((source, idx) => (
@@ -1973,5 +1981,3 @@ export default function VenueDetailPage() {
     </div>
   );
 }
-
-

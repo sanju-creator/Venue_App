@@ -685,6 +685,147 @@ select {
   color: #6f859c;
 }
 
+.global-search-status-pill {
+  margin-top: 8px;
+  border: 1px solid #d2dfec;
+  border-radius: 10px;
+  background: #f7fbff;
+  color: #4b647f;
+  font-size: 12px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.global-search-status-open-btn {
+  border: 1px solid #8db1dc;
+  border-radius: 8px;
+  background: #e9f2ff;
+  color: #315985;
+  font-weight: 700;
+  font-size: 12px;
+  min-height: 28px;
+  padding: 0 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.global-search-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 4000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.global-search-modal {
+  width: min(860px, calc(100vw - 40px));
+  max-height: min(80vh, 760px);
+  border-radius: 16px;
+  border: 1px solid #c7d8eb;
+  background: #f8fbff;
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.global-search-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid #d9e6f2;
+  background: #edf5ff;
+}
+
+.global-search-modal-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #27486f;
+}
+
+.global-search-modal-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #637f9d;
+}
+
+.global-search-modal-close {
+  border: 1px solid #9bbbe0;
+  border-radius: 10px;
+  min-height: 34px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #375d88;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.global-search-modal-list {
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.global-search-modal-item {
+  border: 1px solid #d7e5f2;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.global-search-modal-item-main {
+  min-width: 0;
+}
+
+.global-search-modal-item .result-main {
+  font-size: 14px;
+  font-weight: 800;
+  color: #27486f;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.global-search-modal-item .result-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #607c99;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.global-search-modal-item .search-result-btn {
+  min-height: 34px;
+  min-width: 74px;
+  align-self: center;
+}
+
+.global-search-modal-empty {
+  padding: 24px 18px;
+  color: #5c7691;
+  font-size: 13px;
+}
+
+.global-search-modal-error {
+  padding: 0 18px 16px;
+  color: #a24e4e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .dashboard-venue-search {
   margin-bottom: 12px;
 }
@@ -1741,6 +1882,632 @@ select {
   margin: 0 auto;
   padding: 30px 34px 32px;
   background: #f2f5f9;
+}
+
+.occupancy-page {
+  min-height: 100vh;
+  max-width: 1760px;
+  margin: 0 auto;
+  padding: 28px 34px 40px;
+  background: #f4f7fb;
+}
+
+.occupancy-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+  border: 1px solid #dfe8f3;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff 0%, #f6f9fd 100%);
+  padding: 22px 24px;
+  box-shadow: 0 10px 24px rgba(31, 45, 68, 0.06);
+}
+
+.occupancy-hero-main {
+  min-width: 0;
+}
+
+.occupancy-eyebrow {
+  width: fit-content;
+  margin-bottom: 8px;
+  border: 1px solid #c9d8ea;
+  border-radius: 999px;
+  background: #edf5ff;
+  color: #41678e;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.occupancy-title {
+  margin: 0;
+  color: #24324a;
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.occupancy-subtitle {
+  margin: 9px 0 0;
+  color: #6c7f95;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.occupancy-back-btn {
+  flex: 0 0 auto;
+  min-width: 250px;
+  min-height: 48px;
+}
+
+.occupancy-kpi-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.85fr) repeat(4, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.occupancy-gauge-card {
+  border: 1px solid #dce7f3;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 22px rgba(35, 48, 72, 0.06);
+}
+
+.occupancy-gauge {
+  width: 122px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #ffffff 0 58%, transparent 59%),
+    conic-gradient(#2f80c8 var(--gauge-value), #dfe8f3 0);
+  display: grid;
+  place-items: center;
+}
+
+.occupancy-gauge div {
+  text-align: center;
+}
+
+.occupancy-gauge strong {
+  display: block;
+  color: #24324a;
+  font-size: 25px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.occupancy-gauge span {
+  display: block;
+  margin-top: 4px;
+  color: #7890aa;
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.occupancy-kpi {
+  border: 1px solid #dce7f3;
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px 17px;
+  box-shadow: 0 8px 22px rgba(35, 48, 72, 0.06);
+}
+
+.occupancy-kpi-label {
+  color: #6e8198;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.occupancy-kpi-value {
+  margin-top: 8px;
+  color: #22324a;
+  font-size: 30px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.occupancy-kpi-hint {
+  margin-top: 7px;
+  color: #8293a8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.occupancy-filter-card,
+.occupancy-table-card,
+.occupancy-panel,
+.occupancy-list-card {
+  border: 1px solid #dfe8f3;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(35, 48, 72, 0.06);
+}
+
+.occupancy-filter-card {
+  margin-bottom: 14px;
+  padding: 14px;
+}
+
+.occupancy-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 220px) minmax(150px, 180px);
+  gap: 14px;
+  align-items: end;
+}
+
+.occupancy-search-field {
+  min-width: 0;
+}
+
+.occupancy-search-box {
+  min-height: 46px;
+  border: 1px solid #cbd8e8;
+  border-radius: 10px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  color: #66819f;
+}
+
+.occupancy-search-box:focus-within {
+  border-color: #5b8fce;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.occupancy-search-box input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #23324a;
+  font-size: 15px;
+}
+
+.occupancy-state {
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  color: #5e7188;
+  font-weight: 700;
+}
+
+.occupancy-error {
+  margin-top: 16px;
+}
+
+.occupancy-insight-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(420px, 1.4fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.occupancy-panel {
+  padding: 16px;
+}
+
+.occupancy-panel-head,
+.occupancy-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.occupancy-panel-head {
+  margin-bottom: 14px;
+}
+
+.occupancy-panel-head h2,
+.occupancy-table-head h2 {
+  margin: 0;
+  color: #253651;
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.occupancy-panel-head span {
+  color: #72869f;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.occupancy-band-list {
+  display: grid;
+  gap: 12px;
+}
+
+.occupancy-band-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(120px, 1fr) 52px;
+  align-items: center;
+  gap: 12px;
+}
+
+.occupancy-band-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.occupancy-band-label strong {
+  color: #2a3a54;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.occupancy-band-label em {
+  color: #7f91a8;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.occupancy-band-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 10px;
+}
+
+.occupancy-band-track,
+.occupancy-month-track,
+.occupancy-meter {
+  border-radius: 999px;
+  background: #e8eef6;
+  overflow: hidden;
+}
+
+.occupancy-band-track {
+  height: 9px;
+}
+
+.occupancy-band-track span,
+.occupancy-month-track span,
+.occupancy-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.occupancy-band-value {
+  color: #283a55;
+  font-size: 13px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.occupancy-month-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 16px;
+}
+
+.occupancy-month-row {
+  display: grid;
+  grid-template-columns: 58px minmax(90px, 1fr) 50px;
+  align-items: center;
+  gap: 8px;
+}
+
+.occupancy-month-row > span {
+  color: #41546f;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.occupancy-month-track {
+  height: 8px;
+}
+
+.occupancy-month-row strong {
+  color: #31445f;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.occupancy-leader-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.occupancy-list-card {
+  padding: 15px;
+}
+
+.occupancy-list-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #253651;
+  font-size: 16px;
+  font-weight: 850;
+  margin-bottom: 11px;
+}
+
+.occupancy-list-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.occupancy-list-icon.high {
+  background: #e3f7e8;
+  color: #16783e;
+}
+
+.occupancy-list-icon.low {
+  background: #fde8e8;
+  color: #b53131;
+}
+
+.occupancy-list {
+  display: grid;
+  gap: 8px;
+}
+
+.occupancy-list-row {
+  border: 1px solid #e6edf6;
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.occupancy-list-main {
+  min-width: 0;
+}
+
+.occupancy-list-main strong {
+  display: block;
+  overflow: hidden;
+  color: #263852;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.occupancy-list-main span {
+  display: block;
+  margin-top: 3px;
+  color: #72869f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.occupancy-table-card {
+  overflow: hidden;
+}
+
+.occupancy-table-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid #e1e9f3;
+  background: #f8fbff;
+}
+
+.occupancy-table-head p {
+  margin: 5px 0 0;
+  color: #6c7f95;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.occupancy-count {
+  border: 1px solid #cbd9ea;
+  border-radius: 999px;
+  background: #fff;
+  color: #4c6586;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.occupancy-table-wrap {
+  max-height: 56vh;
+  overflow: auto;
+}
+
+.occupancy-table {
+  width: 100%;
+  min-width: 1060px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.occupancy-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid #cfdceb;
+  background: #edf3fa;
+  color: #334967;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.occupancy-table th span {
+  display: inline-flex;
+  align-items: center;
+}
+
+.occupancy-sort-mark {
+  width: 16px;
+  margin-left: 5px;
+  color: #3d73bd;
+}
+
+.occupancy-table td {
+  border-bottom: 1px solid #e8eef6;
+  color: #26364d;
+  padding: 11px 14px;
+  vertical-align: top;
+  line-height: 1.35;
+}
+
+.occupancy-table tbody tr:nth-child(even) td {
+  background: #fbfdff;
+}
+
+.occupancy-table tbody tr:hover td {
+  background: #eef6ff;
+}
+
+.occupancy-center-cell {
+  min-width: 300px;
+  max-width: 520px;
+  color: #203552;
+  font-weight: 780;
+}
+
+.occupancy-num {
+  color: #33465f;
+  font-weight: 760;
+}
+
+.occupancy-meter-cell {
+  display: grid;
+  grid-template-columns: 66px minmax(80px, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.occupancy-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-weight: 850;
+  font-size: 12px;
+}
+
+.occupancy-meter {
+  height: 7px;
+}
+
+.occupancy-badge.excellent,
+.occupancy-meter-fill.excellent,
+.occupancy-band-dot.excellent,
+.occupancy-band-track span.excellent,
+.occupancy-month-track span.excellent {
+  background: #dcfce7;
+  color: #14773a;
+}
+
+.occupancy-meter-fill.excellent,
+.occupancy-band-dot.excellent,
+.occupancy-band-track span.excellent,
+.occupancy-month-track span.excellent {
+  background: #2fa866;
+}
+
+.occupancy-badge.healthy,
+.occupancy-meter-fill.healthy,
+.occupancy-band-dot.healthy,
+.occupancy-band-track span.healthy,
+.occupancy-month-track span.healthy {
+  background: #e6f4ff;
+  color: #266a9b;
+}
+
+.occupancy-meter-fill.healthy,
+.occupancy-band-dot.healthy,
+.occupancy-band-track span.healthy,
+.occupancy-month-track span.healthy {
+  background: #3b83c2;
+}
+
+.occupancy-badge.watch,
+.occupancy-meter-fill.watch,
+.occupancy-band-dot.watch,
+.occupancy-band-track span.watch,
+.occupancy-month-track span.watch {
+  background: #fef3c7;
+  color: #9a5c05;
+}
+
+.occupancy-meter-fill.watch,
+.occupancy-band-dot.watch,
+.occupancy-band-track span.watch,
+.occupancy-month-track span.watch {
+  background: #d9a027;
+}
+
+.occupancy-badge.critical,
+.occupancy-meter-fill.critical,
+.occupancy-band-dot.critical,
+.occupancy-band-track span.critical,
+.occupancy-month-track span.critical {
+  background: #fee2e2;
+  color: #b52d2d;
+}
+
+.occupancy-meter-fill.critical,
+.occupancy-band-dot.critical,
+.occupancy-band-track span.critical,
+.occupancy-month-track span.critical {
+  background: #d95959;
+}
+
+.occupancy-badge.empty {
+  background: #e9eef5;
+  color: #63758b;
+}
+
+.occupancy-empty-cell {
+  padding: 34px !important;
+  text-align: center;
+  color: #6b7f96 !important;
+  font-weight: 800;
+}
+
+.occupancy-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 13px 16px;
+  border-top: 1px solid #e1e9f3;
+  background: #f8fbff;
+}
+
+.occupancy-pagination span {
+  color: #516984;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .mp-header {
@@ -4014,6 +4781,14 @@ select {
   font-weight: 600;
 }
 
+.category-meaning-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 8px;
+}
+
 .chart-insight-row {
   display: flex;
   align-items: center;
@@ -4556,5 +5331,57 @@ select {
   .unified-perspective-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .occupancy-kpi-grid,
+  .occupancy-insight-grid,
+  .occupancy-leader-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .occupancy-month-list {
+    grid-template-columns: 1fr;
+  }
 }
 
+@media (max-width: 760px) {
+  .occupancy-page {
+    padding: 22px 14px 28px;
+  }
+
+  .occupancy-hero {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .occupancy-title {
+    font-size: 36px;
+  }
+
+  .occupancy-back-btn {
+    min-width: 100%;
+  }
+
+  .occupancy-kpi-grid,
+  .occupancy-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .occupancy-table-head,
+  .occupancy-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .occupancy-band-row {
+    grid-template-columns: 1fr;
+  }
+
+  .occupancy-band-value {
+    text-align: left;
+  }
+
+  .occupancy-list-row {
+    grid-template-columns: 1fr;
+  }
+}
