@@ -1,22 +1,94 @@
 {
   "sessions": [
     {
-      "sessionId": "admin_1778136026344_2t0rd6ls",
+      "sessionId": "admin_1778132761616_ff0p21ve",
       "user": "Admin",
-      "loginAt": "2026-05-07T06:40:26.344Z",
-      "logoutAt": "2026-05-07T07:14:02.984Z",
-      "loginIp": "::1",
-      "logoutIp": "::1",
-      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+      "loginAt": "2026-05-07T05:46:01.616Z",
+      "logoutAt": "2026-05-07T05:47:30.519Z",
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "::ffff:127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
     },
     {
-      "sessionId": "admin_1778145977992_bxsx28nq",
+      "sessionId": "admin_1778132877925_nxb92f0e",
       "user": "Admin",
-      "loginAt": "2026-05-07T09:26:17.992Z",
+      "loginAt": "2026-05-07T05:47:57.925Z",
       "logoutAt": null,
-      "loginIp": "::1",
+      "loginIp": "::ffff:127.0.0.1",
       "logoutIp": "",
-      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778134219683_qwtr0qok",
+      "user": "Admin",
+      "loginAt": "2026-05-07T06:10:19.683Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778134236324_64voo5f7",
+      "user": "Admin",
+      "loginAt": "2026-05-07T06:10:36.324Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778134537074_1g6h8jlu",
+      "user": "Admin",
+      "loginAt": "2026-05-07T06:15:37.074Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778134716834_02l5cemv",
+      "user": "Admin",
+      "loginAt": "2026-05-07T06:18:36.831Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778135291930_kc5eiwlh",
+      "user": "Admin",
+      "loginAt": "2026-05-07T06:28:11.928Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778147002483_jj16b57u",
+      "user": "Admin",
+      "loginAt": "2026-05-07T09:43:22.483Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778148594499_s9wldf4b",
+      "user": "Admin",
+      "loginAt": "2026-05-07T10:09:54.499Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
+    },
+    {
+      "sessionId": "admin_1778173692630_mc8nxqyu",
+      "user": "Admin",
+      "loginAt": "2026-05-07T17:08:12.628Z",
+      "logoutAt": null,
+      "loginIp": "::ffff:127.0.0.1",
+      "logoutIp": "",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"
     }
   ]
 }

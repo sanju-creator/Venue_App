@@ -11,7 +11,8 @@ import {
 
 const AppContext = createContext(null);
 
-const API = "http://localhost:5000/api";
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:5001";
+const API = `${API_ORIGIN}/api`;
 const USER_KEY = "vms_user";
 const USER_EVENT = "vms_user_changed";
 
@@ -61,7 +62,8 @@ export function AppProvider({ children }) {
     () => true,
     () => false,
   );
-  const [page, setPage] = useState("dashboard");
+  // Start at login so every fresh app open requires explicit authentication.
+  const [page, setPage] = useState("login");
   const [pendingPage, setPendingPage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [datasetKey, setDatasetKey] = useState("Venue Inventory");

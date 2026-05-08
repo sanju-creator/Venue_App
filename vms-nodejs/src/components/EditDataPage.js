@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import { useApp } from "@/context/AppContext";
 
 export default function EditDataPage() {
-  const { datasetKey, fetchApi, goTo } = useApp();
+  const { datasetKey, fetchApi, goTo, API } = useApp();
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
@@ -91,13 +91,10 @@ export default function EditDataPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("mode", uploadMode);
-      const response = await fetch(
-        `http://localhost:5000/api/master/${encodeURIComponent(datasetKey)}/upload?mode=${uploadMode}`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const response = await fetch(`${API}/master/${encodeURIComponent(datasetKey)}/upload?mode=${uploadMode}`, {
+        method: "POST",
+        body: formData,
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Upload failed");
       setMessage(

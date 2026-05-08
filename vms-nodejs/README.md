@@ -2,6 +2,18 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Run both backend API and frontend together:
+
+```bash
+npm run dev:all
+```
+
+If you are on Windows and want one-click startup from project root, use:
+
+```bat
+run_nodejs.bat
+```
+
 First, run the development server:
 
 ```bash

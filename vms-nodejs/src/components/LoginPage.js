@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 
 export default function LoginPage() {
-  const { login, notice, setNotice, goTo } = useApp();
+  const { login, notice } = useApp();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -71,18 +71,6 @@ export default function LoginPage() {
             {busy ? "Signing in..." : "Sign In"}
           </button>
         </form>
-
-        <button
-          type="button"
-          className="btn-outline"
-          style={{ marginTop: 12 }}
-          onClick={() => {
-            setNotice("");
-            goTo("dashboard");
-          }}
-        >
-          Back to Dashboard
-        </button>
 
         <p className="login-note">
           Authorized personnel only. Unauthorized access is prohibited.

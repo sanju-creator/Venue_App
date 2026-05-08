@@ -1,0 +1,19 @@
+
+> vms-nodejs@0.1.0 api
+> node server.js
+
+VMS API server running at http://localhost:5001
+[DEBUG] Venue code: WST-MH-1620, Total manpower rows: 4564
+[DEBUG] Row DMS: EST-AN-1149, Match: false, Raw: "EST-AN-1149"
+[DEBUG] Row DMS: EST-AN-1149, Match: false, Raw: "EST-AN-1149"
+[DEBUG] Row DMS: EST-AN-1151, Match: false, Raw: "EST-AN-1151"
+[DEBUG] Row DMS: EST-AN-1151, Match: false, Raw: "EST-AN-1151"
+[DEBUG] Row DMS: EST-AN-1152, Match: false, Raw: "EST-AN-1152"
+[DEBUG] Filtered manpower rows: 7
+[DEBUG] Venue code: WST-MH-2684, Total manpower rows: 4564
+[DEBUG] Row DMS: EST-AN-1149, Match: false, Raw: "EST-AN-1149"
+[DEBUG] Row DMS: EST-AN-1149, Match: false, Raw: "EST-AN-1149"
+[DEBUG] Row DMS: EST-AN-1151, Match: false, Raw: "EST-AN-1151"
+[DEBUG] Row DMS: EST-AN-1151, Match: false, Raw: "EST-AN-1151"
+[DEBUG] Row DMS: EST-AN-1152, Match: false, Raw: "EST-AN-1152"
+[DEBUG] Filtered manpower rows: 16
