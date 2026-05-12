@@ -345,8 +345,17 @@ export default function VenueDetailPage() {
     if (!venue || !currentVenueCode) return;
     if (autoResearchRequestedRef.current.has(currentVenueCode)) return;
     
-    // Auto-search if we have no market research OR if we have it but no sources
-    const needsResearch = !marketResearch || !Array.isArray(marketResearch.sources) || marketResearch.sources.length === 0;
+    // Auto-search if we have no market research, no sources, or stale generic summary text.
+    const summaryText = String(marketResearch?.summary || "").toLowerCase();
+    const hasGenericSummary =
+      summaryText.includes("could not be verified automatically") ||
+      summaryText.includes("not been curated for this venue yet") ||
+      summaryText.includes("highly confident public references");
+    const needsResearch =
+      !marketResearch ||
+      !Array.isArray(marketResearch.sources) ||
+      marketResearch.sources.length === 0 ||
+      hasGenericSummary;
     
     if (needsResearch) {
       autoResearchRequestedRef.current.add(currentVenueCode);
@@ -1435,61 +1444,108 @@ export default function VenueDetailPage() {
                   </div>
                   <div style={{ paddingTop: "12px" }}>
                     <div className="market-summary-content">
-                      {(marketResearch.sources || []).length > 0 ? (
-                        <ul style={{ listStyleType: "disc", paddingLeft: "20px" }}>
-                          {marketResearch.sources.map((source, idx) => {
-                            const domain = getSourceHost(source.url) || "Source";
-                            const favicon = domain.charAt(0).toUpperCase();
-                            return (
-                              <li key={`actual-info-${idx}`} style={{ marginBottom: "16px", lineHeight: "1.7", color: "#334155" }}>
-                                {source.note || "No snippet available for this source."}
-                                <a
-                                  href={source.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                    background: "#f1f5f9",
-                                    padding: "2px 10px 2px 4px",
-                                    borderRadius: "16px",
-                                    marginLeft: "10px",
-                                    textDecoration: "none",
-                                    color: "#475569",
-                                    fontSize: "11.5px",
-                                    fontWeight: 600,
-                                    border: "1px solid #e2e8f0",
-                                    verticalAlign: "middle",
-                                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
-                                  }}
-                                  title={source.label || domain}
-                                >
-                                  <span style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    background: "#ffffff",
-                                    width: "18px",
-                                    height: "18px",
-                                    borderRadius: "50%",
-                                    fontSize: "10px",
-                                    color: "#3b82f6",
-                                    border: "1px solid #cbd5e1"
-                                  }}>
-                                    {favicon}
-                                  </span>
-                                  {domain}
-                                </a>
+                      <div style={{ padding: "14px", color: "#334155", background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0", lineHeight: "1.65" }}>
+                        {pretty(marketResearch.summary || marketExecutiveBrief?.paragraph || "Market summary is being prepared.")}
+                      </div>
+
+                      {Array.isArray(marketExecutiveBrief?.highlights) && marketExecutiveBrief.highlights.length ? (
+                        <div style={{ marginTop: "12px" }}>
+                          <div style={{ fontWeight: 700, color: "#334155", marginBottom: "6px" }}>Internal Snapshot</div>
+                          <ul style={{ listStyleType: "disc", paddingLeft: "20px", margin: 0 }}>
+                            {marketExecutiveBrief.highlights.map((item, idx) => (
+                              <li key={`market-highlight-${idx}`} style={{ marginBottom: "6px", color: "#334155" }}>
+                                {pretty(item)}
                               </li>
-                            );
-                          })}
-                        </ul>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {Array.isArray(marketResearch.opportunities) && marketResearch.opportunities.length ? (
+                        <div style={{ marginTop: "12px" }}>
+                          <div style={{ fontWeight: 700, color: "#334155", marginBottom: "6px" }}>Opportunities</div>
+                          <ul style={{ listStyleType: "disc", paddingLeft: "20px", margin: 0 }}>
+                            {marketResearch.opportunities.map((item, idx) => (
+                              <li key={`market-opportunity-${idx}`} style={{ marginBottom: "6px", color: "#334155" }}>
+                                {pretty(item)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {Array.isArray(marketResearch.risks) && marketResearch.risks.length ? (
+                        <div style={{ marginTop: "12px" }}>
+                          <div style={{ fontWeight: 700, color: "#334155", marginBottom: "6px" }}>Risks / Validation Notes</div>
+                          <ul style={{ listStyleType: "disc", paddingLeft: "20px", margin: 0 }}>
+                            {marketResearch.risks.map((item, idx) => (
+                              <li key={`market-risk-${idx}`} style={{ marginBottom: "6px", color: "#334155" }}>
+                                {pretty(item)}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+
+                      {(marketResearch.sources || []).length > 0 ? (
+                        <div style={{ marginTop: "14px" }}>
+                          <div style={{ fontWeight: 700, color: "#334155", marginBottom: "8px" }}>Source Evidence</div>
+                          <ul style={{ listStyleType: "disc", paddingLeft: "20px" }}>
+                            {marketResearch.sources.map((source, idx) => {
+                              const domain = getSourceHost(source.url) || "Source";
+                              const favicon = domain.charAt(0).toUpperCase();
+                              return (
+                                <li key={`actual-info-${idx}`} style={{ marginBottom: "14px", lineHeight: "1.65", color: "#334155" }}>
+                                  {source.note || "No snippet available for this source."}
+                                  <a
+                                    href={source.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "6px",
+                                      background: "#f1f5f9",
+                                      padding: "2px 10px 2px 4px",
+                                      borderRadius: "16px",
+                                      marginLeft: "10px",
+                                      textDecoration: "none",
+                                      color: "#475569",
+                                      fontSize: "11.5px",
+                                      fontWeight: 600,
+                                      border: "1px solid #e2e8f0",
+                                      verticalAlign: "middle",
+                                      boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                                    }}
+                                    title={source.label || domain}
+                                  >
+                                    <span style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      background: "#ffffff",
+                                      width: "18px",
+                                      height: "18px",
+                                      borderRadius: "50%",
+                                      fontSize: "10px",
+                                      color: "#3b82f6",
+                                      border: "1px solid #cbd5e1"
+                                    }}>
+                                      {favicon}
+                                    </span>
+                                    {domain}
+                                  </a>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
                       ) : (
-                        <div style={{ padding: "16px", color: "#475569", background: "#f8fafc", borderRadius: "8px", border: "1px dashed #cbd5e1", lineHeight: "1.6" }}>
+                        <div style={{ marginTop: "12px", padding: "14px", color: "#475569", background: "#f8fafc", borderRadius: "8px", border: "1px dashed #cbd5e1", lineHeight: "1.6" }}>
                           <span style={{ fontSize: "16px", marginRight: "8px" }}>🔍</span>
-                          We scanned the web for <strong>{pretty(venue.name)}</strong> but couldn't find any highly confident public references. 
-                          The venue might not be listed publicly under this exact name.
+                          External source evidence is still limited. Internal venue profile summary is shown above; click
+                          <strong> Search Web Again </strong>
+                          to fetch more public references.
                         </div>
                       )}
                     </div>

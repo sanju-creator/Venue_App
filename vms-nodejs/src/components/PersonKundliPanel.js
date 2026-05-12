@@ -165,10 +165,18 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
     callLogDetails = [],
     dateDistribution = [],
     resourcePlanning = {},
+    readiness = {},
   } = safeData;
   const totalIssues = issueBreakdown.reduce((s, i) => s + i.count, 0);
   const rp = resourcePlanning || {};
   const scores = rp.scores || {};
+  const examDuty = readiness?.examDuty || {};
+  const training = readiness?.training || {};
+  const examDutyLabel = examDuty?.hasExamDuty ? "Yes" : "No";
+  const trainingLabel = training?.hasPatTraining ? "Yes" : "No";
+  const trainingProjectsText = Array.isArray(training?.trainingProjects) && training.trainingProjects.length
+    ? training.trainingProjects.slice(0, 4).join(", ")
+    : "Not recorded";
 
   const venueRows = venueRotation || [];
   const projectRows = projectDelivery || [];
@@ -551,6 +559,17 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
             <StatusBadge ok={identity.hasEmail} yesLabel="Email Verified" noLabel="Email Missing" />
             <StatusBadge ok={identity.hasGovtId} yesLabel="Govt ID Submitted" noLabel="Govt ID Missing" />
             <StatusBadge ok={identity.hasDeclaration} yesLabel="Declaration Signed" noLabel="Declaration Missing" />
+            <StatusBadge ok={examDuty?.hasExamDuty} yesLabel="Exam Duty Logged" noLabel="Exam Duty Not Logged" />
+            <StatusBadge ok={training?.hasPatTraining} yesLabel="PAT Training Recorded" noLabel="PAT Training Not Recorded" />
+          </div>
+          <div className="pk-readiness-meta">
+            <div className="pk-readiness-row"><span>Exam Participation</span><strong>{examDutyLabel}</strong></div>
+            <div className="pk-readiness-row"><span>Training Completed</span><strong>{trainingLabel}</strong></div>
+            <div className="pk-readiness-row"><span>Exam Projects</span><strong>{examDuty?.projectsWithExamDuty ?? 0}</strong></div>
+            <div className="pk-readiness-row"><span>Training Projects</span><strong>{training?.projectsWithTraining ?? 0}</strong></div>
+          </div>
+          <div className="pk-readiness-note">
+            Project Training Scope: {trainingProjectsText}
           </div>
         </div>
       </div>
@@ -851,4 +870,3 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
     </div>
   );
 }
-

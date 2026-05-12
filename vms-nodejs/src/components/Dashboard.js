@@ -203,6 +203,7 @@ const KPI_BAR_COLORS = [
 ];
 const UNIFIED_EMPLOYEE_TYPES = ["DEXIT", "Outsourced"];
 const MANPOWER_ANALYTICS_USERS = ["Admin", "Prafull"];
+const SEARCH_SCOPES = ["all", "person", "venue"];
 
 function sumBy(rows, getter) {
   return rows.reduce((sum, row) => sum + toNumber(getter(row)), 0);
@@ -213,18 +214,144 @@ function percent(part, total) {
   return Number(((part / total) * 100).toFixed(1));
 }
 
-function doesMatchSearch(row, q) {
-  if (!q) return true;
-  const haystack = `${row.dmsCode} ${row.name} ${row.city} ${row.district} ${row.state}`.toLowerCase();
-  return haystack.includes(q);
-}
-
 function formatCount(value) {
   return numberFormat.format(toNumber(value));
 }
 
 function normalizeSearchToken(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function splitSearchTokens(value) {
+  return normalizeSearchToken(value).split(/\s+/).filter(Boolean);
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getVenueSearchMatch(row, query, includeLocation = false) {
+  const normalizedQuery = normalizeSearchToken(query);
+  if (!normalizedQuery) {
+    return { matched: true, score: 99 };
+  }
+
+  const tokens = splitSearchTokens(normalizedQuery);
+  if (!tokens.length) {
+    return { matched: true, score: 99 };
+  }
+
+  const code = normalizeSearchToken(row?.dmsCode);
+  const name = normalizeSearchToken(row?.name);
+  const primaryText = `${name} ${code}`.trim();
+  const locationText = `${normalizeSearchToken(row?.city)} ${normalizeSearchToken(row?.district)} ${normalizeSearchToken(row?.state)}`.trim();
+  const boundaryChecks = tokens.map((token) => new RegExp(`\\b${escapeRegExp(token)}\\b`, "i"));
+
+  if (name === normalizedQuery || code === normalizedQuery) {
+    return { matched: true, score: 0 };
+  }
+  if (boundaryChecks.every((regex) => regex.test(primaryText))) {
+    return { matched: true, score: 1 };
+  }
+  if (name.startsWith(normalizedQuery) || code.startsWith(normalizedQuery)) {
+    return { matched: true, score: 2 };
+  }
+  if (tokens.every((token) => primaryText.includes(token))) {
+    return { matched: true, score: 3 };
+  }
+
+  if (includeLocation) {
+    if (boundaryChecks.every((regex) => regex.test(locationText))) {
+      return { matched: true, score: 4 };
+    }
+    if (tokens.every((token) => locationText.includes(token))) {
+      return { matched: true, score: 5 };
+    }
+  }
+
+  return { matched: false, score: Number.POSITIVE_INFINITY };
+}
+
+function buildVenueSearchResults(rows, query, options = {}) {
+  const { includeLocation = false, limit = 10 } = options;
+  const normalizedQuery = normalizeSearchToken(query);
+  const resultRows = [];
+
+  rows.forEach((row) => {
+    const match = getVenueSearchMatch(row, normalizedQuery, includeLocation);
+    if (!match.matched) return;
+    resultRows.push({ row, score: match.score });
+  });
+
+  resultRows.sort((left, right) => {
+    if (left.score !== right.score) return left.score - right.score;
+    const leftName = normalizeSearchToken(left.row?.name);
+    const rightName = normalizeSearchToken(right.row?.name);
+    const nameCompare = leftName.localeCompare(rightName, "en", { sensitivity: "base" });
+    if (nameCompare !== 0) return nameCompare;
+    return normalizeSearchToken(left.row?.dmsCode).localeCompare(normalizeSearchToken(right.row?.dmsCode), "en", { sensitivity: "base" });
+  });
+
+  if (!normalizedQuery || limit <= 0) {
+    return resultRows;
+  }
+  return resultRows.slice(0, limit);
+}
+
+function getPersonSearchMatch(person, query) {
+  const normalizedQuery = normalizeSearchToken(query);
+  if (!normalizedQuery) {
+    return { matched: true, score: 99 };
+  }
+
+  const tokens = splitSearchTokens(normalizedQuery);
+  if (!tokens.length) {
+    return { matched: true, score: 99 };
+  }
+
+  const name = normalizeSearchToken(person?.personName);
+  const empId = normalizeSearchToken(person?.empId);
+  const primaryText = `${name} ${empId}`.trim();
+  const boundaryChecks = tokens.map((token) => new RegExp(`\\b${escapeRegExp(token)}\\b`, "i"));
+
+  if (name === normalizedQuery || empId === normalizedQuery) {
+    return { matched: true, score: 0 };
+  }
+  if (boundaryChecks.every((regex) => regex.test(primaryText))) {
+    return { matched: true, score: 1 };
+  }
+  if (name.startsWith(normalizedQuery) || empId.startsWith(normalizedQuery)) {
+    return { matched: true, score: 2 };
+  }
+  if (tokens.every((token) => primaryText.includes(token))) {
+    return { matched: true, score: 3 };
+  }
+  return { matched: false, score: Number.POSITIVE_INFINITY };
+}
+
+function buildPersonSearchResults(rows, query, limit = 8) {
+  const normalizedQuery = normalizeSearchToken(query);
+  const resultRows = [];
+
+  rows.forEach((row) => {
+    const match = getPersonSearchMatch(row, normalizedQuery);
+    if (!match.matched) return;
+    resultRows.push({ row, score: match.score });
+  });
+
+  resultRows.sort((left, right) => {
+    if (left.score !== right.score) return left.score - right.score;
+    const leftName = normalizeSearchToken(left.row?.personName);
+    const rightName = normalizeSearchToken(right.row?.personName);
+    const nameCompare = leftName.localeCompare(rightName, "en", { sensitivity: "base" });
+    if (nameCompare !== 0) return nameCompare;
+    return normalizeSearchToken(left.row?.empId).localeCompare(normalizeSearchToken(right.row?.empId), "en", { sensitivity: "base" });
+  });
+
+  if (!normalizedQuery || limit <= 0) {
+    return resultRows;
+  }
+  return resultRows.slice(0, limit);
 }
 
 function DashboardTable({ headers, rows, footerRow }) {
@@ -292,9 +419,12 @@ export default function Dashboard() {
 
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [includeLocationSearch, setIncludeLocationSearch] = useState(false);
+  const [searchScope, setSearchScope] = useState("all");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activePerspective, setActivePerspective] = useState("venue");
   const venuePerspectiveRef = useRef(null);
+  const venueSearchRef = useRef(null);
   const manpowerPerspectiveRef = useRef(null);
 
   const persistPendingManpowerFilter = useCallback((payload) => {
@@ -514,18 +644,22 @@ export default function Dashboard() {
     });
   }, [sidebarScopedRows, selectedFilters, topFilters]);
 
+  const appliedVenueSearchResults = useMemo(
+    () => buildVenueSearchResults(venueSearchScopeRows, searchQuery, { includeLocation: includeLocationSearch, limit: 0 }),
+    [venueSearchScopeRows, searchQuery, includeLocationSearch],
+  );
+
   const rowsWithoutStatusFilter = useMemo(() => {
     if (!selectedFilters) return [];
-    return venueSearchScopeRows.filter((row) => doesMatchSearch(row, searchQuery));
-  }, [venueSearchScopeRows, selectedFilters, searchQuery]);
+    if (searchScope === "person") return venueSearchScopeRows;
+    if (!searchQuery.trim()) return venueSearchScopeRows;
+    return appliedVenueSearchResults.map((entry) => entry.row);
+  }, [venueSearchScopeRows, selectedFilters, searchQuery, appliedVenueSearchResults, searchScope]);
 
   const venueSearchResults = useMemo(() => {
-    const cleaned = searchInput.trim().toLowerCase();
-    const base = cleaned
-      ? venueSearchScopeRows.filter((row) => doesMatchSearch(row, cleaned))
-      : venueSearchScopeRows;
-    return base.slice(0, 10);
-  }, [venueSearchScopeRows, searchInput]);
+    return buildVenueSearchResults(venueSearchScopeRows, searchInput, { includeLocation: includeLocationSearch, limit: 10 })
+      .map((entry) => entry.row);
+  }, [venueSearchScopeRows, searchInput, includeLocationSearch]);
 
   const filteredRows = useMemo(() => {
     if (!selectedFilters) return [];
@@ -626,6 +760,21 @@ export default function Dashboard() {
       uniqueVenues: entry.venueNames.size,
     }));
   }, [manpowerSnapshot]);
+
+  const personSearchResults = useMemo(
+    () => buildPersonSearchResults(globalPersonDirectory, searchInput, 10).map((entry) => entry.row),
+    [globalPersonDirectory, searchInput],
+  );
+
+  const visibleVenueSearchResults = useMemo(() => {
+    if (searchScope === "person") return [];
+    return venueSearchResults;
+  }, [searchScope, venueSearchResults]);
+
+  const visiblePersonSearchResults = useMemo(() => {
+    if (searchScope === "venue") return [];
+    return personSearchResults;
+  }, [searchScope, personSearchResults]);
 
   const categoryPieData = useMemo(() => {
     const total = filteredRows.length;
@@ -850,17 +999,22 @@ export default function Dashboard() {
     setTopFilters({ region: "", state: "", examCityCentre: "" });
     setSearchInput("");
     setSearchQuery("");
+    setIncludeLocationSearch(false);
+    setSearchScope("all");
     resetDrilldown();
   };
 
   const handleSearch = () => {
-    const cleaned = searchInput.trim().toLowerCase();
-    setSearchQuery(cleaned);
-    if (!cleaned) return;
-    const exact = rows.find((row) => row.dmsCode.toLowerCase() === cleaned);
-    if (exact && user && ["Admin", "Prafull"].includes(user.user)) {
-      openVenueDetail(exact.dmsCode);
+    const cleaned = searchInput.trim();
+    if (!cleaned) {
+      setSearchQuery("");
+      return;
     }
+    if (searchScope === "person") {
+      setSearchQuery("");
+      return;
+    }
+    setSearchQuery(cleaned);
   };
 
   const handleTopFilterChange = (key, value) => {
@@ -943,14 +1097,21 @@ export default function Dashboard() {
         onSelect: entry.onSelect,
       }));
 
-    const venueMatches = rows
-      .filter((row) => doesMatchSearch(row, query))
-      .slice(0, 8)
+    const venueMatches = buildVenueSearchResults(rows, query, { includeLocation: false, limit: 8 })
+      .map((entry) => entry.row)
       .map((row) => ({
         id: `venue-${row.dmsCode}`,
         title: `${row.name || "Unnamed Venue"} (${row.dmsCode})`,
         subtitle: `${row.city || "-"}, ${row.state || "-"} | ${row.venueType || "-"} | ${row.status || "-"}`,
-        onSelect: () => openVenueDetail(row.dmsCode),
+        onSelect: () => {
+          const venueToken = String(row.name || row.dmsCode || "").trim();
+          setSearchInput(venueToken);
+          setSearchQuery(venueToken);
+          switchPerspective("venue");
+          requestAnimationFrame(() => {
+            venueSearchRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        },
       }));
 
     const regionMatches = uniqueSorted(rows.map((row) => row.region))
@@ -1059,11 +1220,12 @@ export default function Dashboard() {
       .map((row) => ({
         id: `manpower-project-${row.projectName}`,
         title: `Project: ${row.projectName || "-"}`,
-        subtitle: "Open manpower analytics for this project context",
+        subtitle: "Open manpower analytics for this project",
         onSelect: () => {
           const payload = { search: String(row.projectName || "").trim() };
           setSelectedVenueCode("");
           setManpowerFilter(payload);
+          persistPendingManpowerFilter(payload);
           goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
         },
       }));
@@ -1129,7 +1291,7 @@ export default function Dashboard() {
       deduped.push(entry);
     });
     return deduped.slice(0, 18);
-  }, [globalModuleEntries, globalPersonDirectory, goTo, manpowerSnapshotProjectRows, openVenueDetail, persistPendingManpowerFilter, rows, setManpowerFilter, setSelectedVenueCode]);
+  }, [globalModuleEntries, globalPersonDirectory, goTo, manpowerSnapshotProjectRows, persistPendingManpowerFilter, rows, setManpowerFilter, setSelectedVenueCode, switchPerspective]);
 
   const renderClickable = (val, onClick) => (
     <span className="clickable-cell" onClick={onClick}>
@@ -1339,8 +1501,18 @@ export default function Dashboard() {
         onClearAll={handleClearAll}
         onResetAll={handleResetAll}
         globalSearchConfig={{
-          placeholder: "Search people, modules, venues, projects, geography...",
+          placeholder: "Type name or code and press Search",
           resolve: resolveGlobalSearchResults,
+          onSearch: (query) => {
+            const token = String(query || "").trim();
+            setSearchInput(token);
+            setSearchQuery(token);
+            setSearchScope("all");
+            switchPerspective("venue");
+            requestAnimationFrame(() => {
+              venueSearchRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            });
+          },
         }}
         mobileOpen={mobileSidebarOpen}
         onToggleMobile={() => setMobileSidebarOpen((prev) => !prev)}
@@ -1424,9 +1596,9 @@ export default function Dashboard() {
           })}
           </div>
 
-          <div className="search-card dashboard-venue-search">
+          <div className="search-card dashboard-venue-search" ref={venueSearchRef}>
             <div className="search-title">Venue Search</div>
-            <div className="search-desc">Search by venue name, DMS code, city, district or state.</div>
+            <div className="search-desc">Step 1: Type name/code. Step 2: Choose All, Person, or Venue. Step 3: Click Search and Open.</div>
             <div className="search-flex">
               <input
                 className="search-input"
@@ -1437,27 +1609,102 @@ export default function Dashboard() {
                 }}
                 placeholder="e.g. AP COMPUTER POINT or EST-AR-1161 or ITANAGAR..."
               />
-              <button className="search-btn" onClick={handleSearch}>Search Venue</button>
+              <button className="search-btn" onClick={handleSearch}>Search</button>
             </div>
+            <div className="dashboard-search-scope">
+              {SEARCH_SCOPES.map((scope) => (
+                <button
+                  key={scope}
+                  type="button"
+                  className={`dashboard-search-scope-btn ${searchScope === scope ? "active" : ""}`}
+                  onClick={() => {
+                    setSearchScope(scope);
+                    if (scope === "person") setSearchQuery("");
+                  }}
+                >
+                  {scope === "all" ? "All" : scope === "person" ? "Person" : "Venue"}
+                </button>
+              ))}
+            </div>
+            <label className="search-checkbox-row">
+              <input
+                type="checkbox"
+                checked={includeLocationSearch}
+                onChange={(event) => setIncludeLocationSearch(event.target.checked)}
+                disabled={searchScope === "person"}
+              />
+              <span>Include city, district, and state in search</span>
+            </label>
             {searchInput.trim() ? (
               <div className="search-result-list dashboard-venue-search-results">
-                {venueSearchResults.length ? (
-                  venueSearchResults.map((row) => (
-                    <div className="search-result-row" key={`venue-result-${row.dmsCode}`}>
-                      <div>
-                        <div className="result-main">{row.name || "-"}</div>
-                        <div className="result-sub">
-                          {row.dmsCode} | {row.city || "-"}, {row.state || "-"} | {row.status || "-"}
+                {searchScope !== "venue" ? (
+                  <div className="dashboard-search-group">
+                    <div className="dashboard-search-group-title">People</div>
+                    {visiblePersonSearchResults.length ? (
+                      visiblePersonSearchResults.map((person) => {
+                        const rolePreview = person.rolesList.slice(0, 2).join(", ") || "Role unavailable";
+                        const locationPreview = [person.citiesList[0], person.statesList[0]].filter(Boolean).join(", ") || "Location unavailable";
+                        const searchToken = String(person.empId || person.personName || "").trim();
+                        return (
+                          <div className="search-result-row" key={`person-result-${person.key}`}>
+                            <div>
+                              <div className="result-main">
+                                {person.personName}
+                                {person.empId ? ` (${person.empId})` : ""}
+                              </div>
+                              <div className="result-sub">{rolePreview} | {locationPreview} | Venues: {person.uniqueVenues}</div>
+                            </div>
+                            <div className="dashboard-inline-search-actions">
+                              <button
+                                className="btn-outline search-result-btn"
+                                onClick={() => {
+                                  const payload = {
+                                    search: searchToken,
+                                    focusEmpId: String(person.empId || "").trim(),
+                                    personName: person.personName,
+                                  };
+                                  setSelectedVenueCode("");
+                                  setManpowerFilter(payload);
+                                  persistPendingManpowerFilter(payload);
+                                  goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
+                                }}
+                              >
+                                Open
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="search-empty">No person match found.</div>
+                    )}
+                  </div>
+                ) : null}
+
+                {searchScope !== "person" ? (
+                  <div className="dashboard-search-group">
+                    <div className="dashboard-search-group-title">Venues</div>
+                    {visibleVenueSearchResults.length ? (
+                      visibleVenueSearchResults.map((row) => (
+                        <div className="search-result-row" key={`venue-result-${row.dmsCode}`}>
+                          <div>
+                            <div className="result-main">{row.name || "-"}</div>
+                            <div className="result-sub">
+                              {row.dmsCode} | {row.city || "-"}, {row.state || "-"} | {row.status || "-"}
+                            </div>
+                          </div>
+                          <div className="dashboard-inline-search-actions">
+                            <button className="btn-outline search-result-btn" onClick={() => openVenueDetail(row.dmsCode)}>
+                              Open
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <button className="btn-outline search-result-btn" onClick={() => openVenueDetail(row.dmsCode)}>
-                        Open
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="search-empty">No venue matches found.</div>
-                )}
+                      ))
+                    ) : (
+                      <div className="search-empty">No venue match found.</div>
+                    )}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

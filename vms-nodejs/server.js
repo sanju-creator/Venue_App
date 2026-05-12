@@ -20,7 +20,7 @@ const PHOTOS_PATH = path.join(DATA_PATH, "Venue_Photos");
 const SESSION_LOG_PATH = path.join(DATA_PATH, "user_session_logs.json");
 const MARKET_RESEARCH_PATH = path.join(DATA_PATH, "market_research.json");
 const MAX_SESSION_LOGS = 5000;
-const DEFAULT_RESEARCH_MAX_RESULTS = 6;
+const DEFAULT_RESEARCH_MAX_RESULTS = 10;
 
 if (!fs.existsSync(OUTPUT_PATH)) fs.mkdirSync(OUTPUT_PATH, { recursive: true });
 if (!fs.existsSync(PHOTOS_PATH)) fs.mkdirSync(PHOTOS_PATH, { recursive: true });
@@ -557,22 +557,31 @@ async function fetchTextWithTimeout(url, options = {}, timeoutMs = 12000) {
 
 function buildResearchQueries(record, code) {
   const venueName = cleanText(record?.venue_name || record?.name || "");
+  const venueNameNoParen = venueName.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  const venueNameNoLegacy = venueName
+    .replace(/\bFORMERLY\b.*$/i, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const city = cleanText(record?.city || "");
   const state = cleanText(record?.state || "");
   const address = cleanText(record?.complete_address || record?.address || "");
+  const landmark = cleanText(record?.landmark || "");
   const pincode = cleanText(record?.pincode || "");
   const dms = cleanDms(code || record?.dms_code || record?.venue_code || record?.code);
   const location = [city, state, pincode].filter(Boolean).join(" ");
 
   const queries = [
-    [`"${venueName}"`, `"${address}"`, city, state].filter(Boolean).join(" "),
-    [venueName, address, location].filter(Boolean).join(" "),
-    [venueName, city, state, pincode].filter(Boolean).join(" "),
-    [dms, venueName, city].filter(Boolean).join(" "),
+    [`"${venueNameNoParen || venueName}"`, city, state, pincode, "test center"].filter(Boolean).join(" "),
+    [venueNameNoLegacy || venueNameNoParen || venueName, city, state, "exam centre"].filter(Boolean).join(" "),
+    [venueName, landmark, city, state].filter(Boolean).join(" "),
+    [venueNameNoParen || venueName, address, location].filter(Boolean).join(" "),
+    [dms, venueNameNoParen || venueName, city].filter(Boolean).join(" "),
+    [venueNameNoParen || venueName, "official website", city].filter(Boolean).join(" "),
   ]
     .map((q) => cleanText(q))
     .filter(Boolean);
-  return Array.from(new Set(queries)).slice(0, 4);
+  return Array.from(new Set(queries)).slice(0, 6);
 }
 
 function tokenizeResearchText(value) {
@@ -668,7 +677,7 @@ function analyzeSourceRelevance(entry, signals) {
 function selectRelevantSourcesForVenue(sources, record, code) {
   const list = Array.isArray(sources) ? sources : [];
   const signals = buildVenueSignals(record, code);
-  return list
+  const ranked = list
     .map((source) => {
       const normalized = {
         label: cleanText(source?.label || "Source"),
@@ -688,16 +697,28 @@ function selectRelevantSourcesForVenue(sources, record, code) {
         ...relevance,
       };
     })
+    .filter((source) => (source.label || source.url))
+    .sort((a, b) => b.score - a.score);
+
+  const strict = ranked
     .filter((source) => {
       const highSignal =
         source.hasCodeMatch ||
         source.hasFullNameMatch ||
         (source.matchedName > 0 && (source.matchedLocation > 0 || source.matchedAddress > 0)) ||
         source.matchedAddress >= 2;
-      return (source.label || source.url) && highSignal && source.score >= 7;
+      return highSignal && source.score >= 6;
     })
-    .sort((a, b) => b.score - a.score)
     .slice(0, DEFAULT_RESEARCH_MAX_RESULTS)
+    .map(({ label, url, note }) => ({ label, url, note }));
+
+  if (strict.length) return strict;
+
+  // Fallback: keep top relevant links even when strict confidence is low,
+  // so UI can still show meaningful evidence instead of an empty generic note.
+  return ranked
+    .filter((source) => source.score >= 2 || source.matchedLocation > 0 || source.matchedAddress > 0 || source.hasFullNameMatch)
+    .slice(0, Math.min(5, DEFAULT_RESEARCH_MAX_RESULTS))
     .map(({ label, url, note }) => ({ label, url, note }));
 }
 
@@ -709,17 +730,27 @@ function buildSimpleMarketSummary(record, searchResults) {
   const domains = Array.from(new Set((searchResults || []).map((r) => r.domain).filter(Boolean)));
 
   if (!searchResults.length) {
+    const fallbackAddress = cleanText(record?.complete_address || record?.address || "");
+    const fallbackLandmark = cleanText(record?.landmark || "");
     return {
       status: "Research pending",
       confidence: "Low",
       marketPosition: location ? `Local venue in ${location}` : "Local venue",
-      summary:
-        "Internet sources could not be verified automatically right now. Please retry and add at least one official/public source for final decision support.",
+      summary: [
+        `Public web references for ${venueName} are limited right now.`,
+        location ? `Internal profile location: ${location}.` : "",
+        fallbackLandmark ? `Landmark: ${fallbackLandmark}.` : "",
+        fallbackAddress ? `Address on file: ${fallbackAddress}.` : "",
+        "Use Search Web Again to refresh internet references before final decision support.",
+      ]
+        .filter(Boolean)
+        .join(" "),
       opportunities: [
-        "Attach at least one official venue/company listing and one mapping/access source.",
+        "Add one official company/source page and one map/listing source for stronger external validation.",
+        "Cross-check address and access landmarks with latest public references.",
       ],
       risks: [
-        "No reliable public source was found during automatic scan.",
+        "External references are currently limited, so confidence remains low.",
       ],
     };
   }
@@ -870,53 +901,94 @@ function upsertMarketResearchRecord(record) {
 
 function buildMarketResearchFallback(record) {
   const venueName = cleanText(record?.venue_name || record?.name || record?.venue || "Venue");
-  const city = cleanText(record?.city || record?.district || "");
+  const city = cleanText(record?.city || "");
+  const district = cleanText(record?.district || "");
   const state = cleanText(record?.state || "");
+  const pincode = cleanText(record?.pincode || "");
   const address = cleanText(record?.complete_address || record?.address || "");
+  const landmark = cleanText(record?.landmark || "");
+  const venueStatus = cleanText(record?.status || "Unknown");
+  const venueType = cleanText(record?.venue_type || record?.type || "");
+  const companyName = cleanText(record?.company_name || "DEXIT Global Limited");
   const locationText = [city, state].filter(Boolean).join(", ");
+  const locationLine = [city || district, district && district !== city ? district : "", state, pincode].filter(Boolean).join(", ");
+  const addressLine = address || landmark || "Address is available in internal profile.";
+  const summaryParts = [
+    `${venueName} is available in the internal venue profile${locationText ? ` for ${locationText}` : ""}.`,
+    venueType ? `Venue type: ${venueType}.` : "",
+    venueStatus ? `Current operating status on record: ${venueStatus}.` : "",
+    locationLine ? `Location details: ${locationLine}.` : "",
+    landmark ? `Landmark: ${landmark}.` : "",
+    `Address on file: ${addressLine}`,
+    `Public market references are still being verified; use Search Web Again for latest web-backed evidence.`,
+  ].filter(Boolean);
   return {
     venueName,
     status: "Research pending",
     confidence: "Low",
     marketPosition: locationText ? `Local venue in ${locationText}` : "Local venue",
-    summary:
-      "External market research has not been curated for this venue yet. Use the internal venue profile and add verified public sources before using this section for final market decisions.",
+    summary: summaryParts.join(" "),
     opportunities: [
-      "Add official venue/company source, exam-center listing, and nearby-access notes.",
-      "Validate current address, operating status, and candidate entry/accessibility before scheduling.",
+      `Validate venue listing using one official ${companyName} source and one public map/listing source.`,
+      "Confirm candidate entry route, nearest transport/landmark access, and current center activity before scheduling.",
+      "Cross-check contact details from internal profile with latest public references.",
     ],
     risks: [
-      "No verified external market source is currently attached to this venue.",
+      "External source confidence is currently low because verified public references are limited.",
+      "Final market decisions should not rely only on internal profile without one external validation source.",
     ],
     sources: [],
-    searchQuery: [venueName, address, city, state].filter(Boolean).join(" "),
+    searchQuery: [venueName, address, landmark, city, district, state, pincode].filter(Boolean).join(" "),
     lastResearchedAt: "",
+  };
+}
+
+function isGenericResearchSummary(value) {
+  const summary = cleanText(value).toLowerCase();
+  if (!summary) return true;
+  return (
+    summary.includes("not been curated for this venue yet") ||
+    summary.includes("could not be verified automatically") ||
+    summary.includes("highly confident public references") ||
+    summary.includes("no reliable public source was found")
+  );
+}
+
+function buildMarketResearchResponse(entry, record, code) {
+  if (!entry || typeof entry !== "object") return buildMarketResearchFallback(record);
+
+  const relevantSources = selectRelevantSourcesForVenue(entry.sources, record, code);
+  const summary = cleanText(entry.summary || "");
+  const opportunities = Array.isArray(entry.opportunities) ? entry.opportunities.map(cleanText).filter(Boolean) : [];
+  const risks = Array.isArray(entry.risks) ? entry.risks.map(cleanText).filter(Boolean) : [];
+  const staleGeneric = isGenericResearchSummary(summary) && relevantSources.length === 0;
+
+  if (staleGeneric) return buildMarketResearchFallback(record);
+
+  return {
+    venueName: cleanText(entry.venueName || record?.venue_name || record?.name),
+    status: cleanText(entry.status || "Researched"),
+    confidence: cleanText(entry.confidence || "Medium"),
+    marketPosition: cleanText(entry.marketPosition || ""),
+    summary: summary || buildMarketResearchFallback(record).summary,
+    opportunities,
+    risks,
+    sources: relevantSources,
+    searchQuery: cleanText(entry.searchQuery || ""),
+    lastResearchedAt: cleanText(entry.lastResearchedAt || ""),
   };
 }
 
 function findMarketResearchForVenue(record, code) {
   const records = readMarketResearchRecords();
   const dmsCandidates = [code, record?.dms_code, record?.venue_code, record?.code].map(cleanDms).filter(Boolean);
+  let strictByCode = null;
 
   if (dmsCandidates.length) {
-    const strictByCode = records.find((entry) => {
+    strictByCode = records.find((entry) => {
       const entryCodes = Array.isArray(entry?.dmsCodes) ? entry.dmsCodes.map(cleanDms).filter(Boolean) : [];
       return entryCodes.length && dmsCandidates.some((candidate) => entryCodes.includes(candidate));
     });
-    if (!strictByCode) return buildMarketResearchFallback(record);
-    const relevantSources = selectRelevantSourcesForVenue(strictByCode.sources, record, code);
-    return {
-      venueName: cleanText(strictByCode.venueName || record?.venue_name || record?.name),
-      status: cleanText(strictByCode.status || "Researched"),
-      confidence: cleanText(strictByCode.confidence || "Medium"),
-      marketPosition: cleanText(strictByCode.marketPosition || ""),
-      summary: cleanText(strictByCode.summary || ""),
-      opportunities: Array.isArray(strictByCode.opportunities) ? strictByCode.opportunities.map(cleanText).filter(Boolean) : [],
-      risks: Array.isArray(strictByCode.risks) ? strictByCode.risks.map(cleanText).filter(Boolean) : [],
-      sources: relevantSources,
-      searchQuery: cleanText(strictByCode.searchQuery || ""),
-      lastResearchedAt: cleanText(strictByCode.lastResearchedAt || ""),
-    };
   }
 
   const textCandidates = [
@@ -944,20 +1016,9 @@ function findMarketResearchForVenue(record, code) {
     return addressContains.length && addressContains.every((needle) => textCandidates.some((candidate) => candidate.includes(needle)));
   });
 
-  if (!matched) return buildMarketResearchFallback(record);
-  const relevantSources = selectRelevantSourcesForVenue(matched.sources, record, code);
-  return {
-    venueName: cleanText(matched.venueName || record?.venue_name || record?.name),
-    status: cleanText(matched.status || "Researched"),
-    confidence: cleanText(matched.confidence || "Medium"),
-    marketPosition: cleanText(matched.marketPosition || ""),
-    summary: cleanText(matched.summary || ""),
-    opportunities: Array.isArray(matched.opportunities) ? matched.opportunities.map(cleanText).filter(Boolean) : [],
-    risks: Array.isArray(matched.risks) ? matched.risks.map(cleanText).filter(Boolean) : [],
-    sources: relevantSources,
-    searchQuery: cleanText(matched.searchQuery || ""),
-    lastResearchedAt: cleanText(matched.lastResearchedAt || ""),
-  };
+  const resolved = strictByCode || matched;
+  if (!resolved) return buildMarketResearchFallback(record);
+  return buildMarketResearchResponse(resolved, record, code);
 }
 
 function pickLatestAnalysisFile() {
@@ -3691,6 +3752,15 @@ app.get("/api/manpower/person/:empId", (req, res) => {
     let totalBatches = 0, fullBatchDelay = 0, partialBatchDelay = 0, noDelay = 0, ffa = 0, callLogs = 0;
     const deliveryKeys = new Set();
     const venueBreakdownMap = new Map();
+    const examProjects = new Set();
+    const examDrives = new Set();
+    const trainingProjects = new Set();
+    const trainingDrives = new Set();
+    let examRows = 0;
+    let trainingRows = 0;
+    let maxExamDays = 0;
+    let maxPatTrainingAttempted = 0;
+    let maxUniquePatTrainingAttempted = 0;
 
     for (const row of personRows) {
       if (!identity.name) identity.name = cleanText(row.name) || targetEmpId;
@@ -3704,6 +3774,32 @@ app.get("/api/manpower/person/:empId", (req, res) => {
       if (cleanText(row.project_name)) projects.add(cleanText(row.project_name));
       if (cleanText(row.drive_name)) drives.add(cleanText(row.drive_name));
       if (cleanText(row.date)) dates.add(cleanText(row.date));
+
+      const examDays = toNumber(row.exam_days);
+      const patTrainingAttempted = toNumber(row.pat_training_attempted);
+      const uniquePatTrainingAttempted = toNumber(row.unique_pat_training_attempted);
+      const rowProjectName = cleanText(row.project_name);
+      const rowDriveName = cleanText(row.drive_name);
+
+      if (examDays > 0) {
+        examRows += 1;
+        if (rowProjectName) examProjects.add(rowProjectName);
+        if (rowDriveName) examDrives.add(rowDriveName);
+        if (examDays > maxExamDays) maxExamDays = examDays;
+      }
+
+      if (patTrainingAttempted > 0 || uniquePatTrainingAttempted > 0) {
+        trainingRows += 1;
+        if (rowProjectName) trainingProjects.add(rowProjectName);
+        if (rowDriveName) trainingDrives.add(rowDriveName);
+      }
+
+      if (patTrainingAttempted > maxPatTrainingAttempted) {
+        maxPatTrainingAttempted = patTrainingAttempted;
+      }
+      if (uniquePatTrainingAttempted > maxUniquePatTrainingAttempted) {
+        maxUniquePatTrainingAttempted = uniquePatTrainingAttempted;
+      }
 
       const dmsKey = row.dms_code ? "dms_code" : "center_code";
       const dmsValue = cleanDms(row[dmsKey] || row.dms_code || row.center_code || row.venue_code);
@@ -3994,6 +4090,29 @@ app.get("/api/manpower/person/:empId", (req, res) => {
       recommendations,
     };
 
+    const readiness = {
+      examDuty: {
+        hasExamDuty: examRows > 0 || examProjects.size > 0 || maxExamDays > 0,
+        rowsWithExamDuty: examRows,
+        projectsWithExamDuty: examProjects.size,
+        drivesWithExamDuty: examDrives.size,
+        maxExamDaysObserved: maxExamDays,
+      },
+      training: {
+        hasPatTraining:
+          trainingRows > 0 ||
+          trainingProjects.size > 0 ||
+          maxPatTrainingAttempted > 0 ||
+          maxUniquePatTrainingAttempted > 0,
+        rowsWithTraining: trainingRows,
+        projectsWithTraining: trainingProjects.size,
+        drivesWithTraining: trainingDrives.size,
+        maxPatTrainingAttempted,
+        maxUniquePatTrainingAttempted,
+        trainingProjects: Array.from(trainingProjects),
+      },
+    };
+
     return res.json({
       identity: {
         empId: identity.empId,
@@ -4031,6 +4150,7 @@ app.get("/api/manpower/person/:empId", (req, res) => {
       callLogDetails,
       dateDistribution,
       resourcePlanning,
+      readiness,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });

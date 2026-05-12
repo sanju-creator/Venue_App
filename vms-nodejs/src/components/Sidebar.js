@@ -103,7 +103,6 @@ export default function Sidebar({
   const [currentTime, setCurrentTime] = useState("");
   const [globalSearchInput, setGlobalSearchInput] = useState("");
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
-  const [globalSearchModalOpen, setGlobalSearchModalOpen] = useState(false);
   const [globalSearchBusy, setGlobalSearchBusy] = useState(false);
   const [globalSearchFallbackResult, setGlobalSearchFallbackResult] = useState(null);
   const [globalSearchFallbackError, setGlobalSearchFallbackError] = useState("");
@@ -159,17 +158,6 @@ export default function Sidebar({
   }, [globalSearchFallbackResult, globalSearchResults]);
 
   useEffect(() => {
-    if (!globalSearchModalOpen) return undefined;
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") {
-        setGlobalSearchModalOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [globalSearchModalOpen]);
-
-  useEffect(() => {
     if (!globalSearchConfig || page !== "dashboard" || typeof window === "undefined") return;
     try {
       const raw = sessionStorage.getItem("vms_global_search_restore");
@@ -179,7 +167,6 @@ export default function Sidebar({
       if (!restoredQuery) return;
       setGlobalSearchInput(restoredQuery);
       setGlobalSearchQuery(restoredQuery);
-      setGlobalSearchModalOpen(payload?.openModal !== false);
       sessionStorage.removeItem("vms_global_search_restore");
     } catch {
       // Ignore storage parsing failures.
@@ -189,7 +176,6 @@ export default function Sidebar({
   const handleGlobalSearch = async () => {
     const query = String(globalSearchInput || "").trim();
     setGlobalSearchQuery(query);
-    setGlobalSearchModalOpen(Boolean(query));
     setGlobalSearchFallbackResult(null);
     setGlobalSearchFallbackError("");
 
@@ -231,7 +217,6 @@ export default function Sidebar({
               // Ignore storage failures and continue navigation.
             }
           }
-          setGlobalSearchModalOpen(false);
           goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: ["Admin", "Prafull"] });
         },
       });
@@ -285,6 +270,7 @@ export default function Sidebar({
         {globalSearchConfig ? (
           <div className="sidebar-global-search">
             <div className="search-title">Global Search</div>
+            <div className="search-desc">Type name/code and press Search. Results will appear on dashboard.</div>
             <div className="search-flex">
               <input
                 className="search-input"
@@ -299,14 +285,19 @@ export default function Sidebar({
             </div>
 
             {globalSearchQuery ? (
-              <div className="global-search-status-pill">
-                {globalSearchBusy
-                  ? "Searching..."
-                  : `${mergedGlobalSearchResults.length} result${mergedGlobalSearchResults.length === 1 ? "" : "s"} for "${globalSearchQuery}"`}
-                <button className="global-search-status-open-btn" onClick={() => setGlobalSearchModalOpen(true)}>
-                  View
-                </button>
-              </div>
+              globalSearchBusy ? (
+                <div className="search-empty">Searching records...</div>
+              ) : mergedGlobalSearchResults.length ? (
+                <div className="search-empty">Results updated in dashboard section.</div>
+              ) : (
+                <div className="search-empty">
+                  No results found. Try full name, employee ID, venue code, city, state, or project name.
+                </div>
+              )
+            ) : null}
+
+            {globalSearchFallbackError ? (
+              <div className="global-search-modal-error">{globalSearchFallbackError}</div>
             ) : null}
           </div>
         ) : null}
@@ -402,71 +393,6 @@ export default function Sidebar({
         </div>
       </aside>
 
-      {globalSearchModalOpen ? (
-        <div className="global-search-modal-backdrop" onClick={() => setGlobalSearchModalOpen(false)}>
-          <div className="global-search-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="global-search-modal-head">
-              <div>
-                <div className="global-search-modal-title">Global Search Results</div>
-                <div className="global-search-modal-subtitle">
-                  Query: "{globalSearchQuery || "N/A"}"
-                </div>
-              </div>
-              <button className="global-search-modal-close" onClick={() => setGlobalSearchModalOpen(false)}>
-                Close
-              </button>
-            </div>
-
-            {globalSearchBusy ? (
-              <div className="global-search-modal-empty">Searching records...</div>
-            ) : mergedGlobalSearchResults.length ? (
-              <div className="global-search-modal-list">
-                {mergedGlobalSearchResults.map((result) => (
-                  <div className="global-search-modal-item" key={result.id}>
-                    <div className="global-search-modal-item-main">
-                      <div className="result-main">{result.title}</div>
-                      {result.subtitle ? <div className="result-sub">{result.subtitle}</div> : null}
-                    </div>
-                    <button
-                      className="search-result-btn"
-                      onClick={() => {
-                        const resultId = String(result?.id || "");
-                        const isManpowerNavigation =
-                          resultId === "module-manpower" ||
-                          resultId.startsWith("manpower-") ||
-                          resultId.startsWith("fallback-person-");
-                        if (isManpowerNavigation && typeof window !== "undefined") {
-                          const payload = {
-                            query: String(globalSearchQuery || "").trim(),
-                            openModal: true,
-                          };
-                          try {
-                            sessionStorage.setItem("vms_manpower_return_global_search", JSON.stringify(payload));
-                          } catch {
-                            // Ignore storage failures and continue navigation.
-                          }
-                        }
-                        if (typeof result.onSelect === "function") result.onSelect();
-                        setGlobalSearchModalOpen(false);
-                      }}
-                    >
-                      Open
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="global-search-modal-empty">
-                No results found. Try full name, employee ID, venue code, city, state, or project name.
-              </div>
-            )}
-
-            {globalSearchFallbackError ? (
-              <div className="global-search-modal-error">{globalSearchFallbackError}</div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }
