@@ -634,7 +634,7 @@ export default function Dashboard() {
       return {
         name: category,
         value: count,
-        percent: percent(count, total),
+        percentage: percent(count, total),
       };
     }).filter((item) => item.value > 0);
   }, [filteredRows]);
@@ -1394,6 +1394,36 @@ export default function Dashboard() {
             </div>
           </div>
 
+          <div className="kpi-row kpi-row-dashboard" id="venue-perspective-section" ref={venuePerspectiveRef}>
+          {KPI_CARDS.map((card) => {
+            const val = kpis[card.key];
+            const isBlacklisted = card.key === "blacklisted" || card.key === "blacklistedSeatCapacity";
+            const isInactive = card.key === "inactive";
+            const severityClass = isBlacklisted && val > 0 ? " kpi-severity-critical" : isInactive && val > 0 ? " kpi-severity-warning" : "";
+            const severityIcon = isBlacklisted && val > 0 ? "🔴" : isInactive && val > 0 ? "🟡" : "";
+            return (
+              <button
+                key={card.key}
+                data-tooltip="Click to drill down"
+                className={`kpi-box with-view kpi-clickable${drilldownPath.key === card.key ? " kpi-active" : ""}${severityClass}`}
+                style={{ "--kpi-accent": card.color }}
+                onClick={() => {
+                  if (drilldownPath.key === card.key) {
+                    resetDrilldown();
+                  } else {
+                    setDrilldownPath({ type: 'kpi', key: card.key, region: null, state: null, district: null, city: null });
+                    document.getElementById("drilldown-section")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+              >
+                <div className="kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
+                <div className="kpi-val">{formatCount(val)}</div>
+                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "Drill down"}</div>
+              </button>
+            );
+          })}
+          </div>
+
           <div className="search-card dashboard-venue-search">
             <div className="search-title">Venue Search</div>
             <div className="search-desc">Search by venue name, DMS code, city, district or state.</div>
@@ -1430,36 +1460,6 @@ export default function Dashboard() {
                 )}
               </div>
             ) : null}
-          </div>
-
-          <div className="kpi-row kpi-row-dashboard" id="venue-perspective-section" ref={venuePerspectiveRef}>
-          {KPI_CARDS.map((card) => {
-            const val = kpis[card.key];
-            const isBlacklisted = card.key === "blacklisted" || card.key === "blacklistedSeatCapacity";
-            const isInactive = card.key === "inactive";
-            const severityClass = isBlacklisted && val > 0 ? " kpi-severity-critical" : isInactive && val > 0 ? " kpi-severity-warning" : "";
-            const severityIcon = isBlacklisted && val > 0 ? "🔴" : isInactive && val > 0 ? "🟡" : "";
-            return (
-              <button
-                key={card.key}
-                data-tooltip="Click to drill down"
-                className={`kpi-box with-view kpi-clickable${drilldownPath.key === card.key ? " kpi-active" : ""}${severityClass}`}
-                style={{ "--kpi-accent": card.color }}
-                onClick={() => {
-                  if (drilldownPath.key === card.key) {
-                    resetDrilldown();
-                  } else {
-                    setDrilldownPath({ type: 'kpi', key: card.key, region: null, state: null, district: null, city: null });
-                    document.getElementById("drilldown-section")?.scrollIntoView({ behavior: "smooth" });
-                  }
-                }}
-              >
-                <div className="kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
-                <div className="kpi-val">{formatCount(val)}</div>
-                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "Drill down"}</div>
-              </button>
-            );
-          })}
           </div>
         </div>
 
@@ -1691,7 +1691,7 @@ export default function Dashboard() {
                     ))}
                   </Pie>
                   <RechartsTooltip
-                    formatter={(value, name, props) => [formatCount(value), `${name} (${props.payload.percent}%)`]}
+                    formatter={(value, name, props) => [formatCount(value), `${name} (${props.payload.percentage}%)`]}
                   />
                 </PieChart>
               </ResponsiveContainer>

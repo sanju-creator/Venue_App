@@ -802,12 +802,8 @@ async function generateMarketResearchForVenue(record, code) {
       return { ...entry, ...relevance };
     })
     .filter((entry) => {
-      const highSignal =
-        entry.hasCodeMatch ||
-        entry.hasFullNameMatch ||
-        (entry.matchedName > 0 && (entry.matchedLocation > 0 || entry.matchedAddress > 0)) ||
-        entry.matchedAddress >= 2;
-      return highSignal && entry.score >= 7;
+      // Relaxed criteria to ensure we capture relevant public references for the AI overview
+      return entry.score >= 3 || entry.hasFullNameMatch || entry.matchedName > 0 || entry.matchedLocation > 0;
     })
     .sort((a, b) => b.score - a.score)
     .filter((entry) => {

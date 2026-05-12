@@ -69,6 +69,7 @@ export default function VenueDetailPage() {
   const [occupancyPercent, setOccupancyPercent] = useState(0);
   const [manpower, setManpower] = useState([]);
   const [marketResearch, setMarketResearch] = useState(null);
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false);
 
   // Person Kundli state
   const [selectedManpower, setSelectedManpower] = useState(null);
@@ -128,6 +129,7 @@ export default function VenueDetailPage() {
 
   const refreshMarketResearch = useCallback(async () => {
     if (!currentVenueCode || !isMountedRef.current) return;
+    setIsSearchingWeb(true);
     try {
       const data = await fetchApi(`venue/${encodeURIComponent(currentVenueCode)}/market-research`, {
         method: "POST",
@@ -138,6 +140,8 @@ export default function VenueDetailPage() {
       setMarketResearch(data?.marketResearch || null);
     } catch {
       // Keep existing data if internet refresh fails.
+    } finally {
+      if (isMountedRef.current) setIsSearchingWeb(false);
     }
   }, [currentVenueCode, fetchApi]);
 
@@ -338,12 +342,16 @@ export default function VenueDetailPage() {
   }, [selectedVenueCode]);
 
   useEffect(() => {
-    if (!venue || !currentVenueCode || !marketResearch) return;
-    const hasSources = Array.isArray(marketResearch.sources) && marketResearch.sources.length > 0;
-    if (hasSources) return;
+    if (!venue || !currentVenueCode) return;
     if (autoResearchRequestedRef.current.has(currentVenueCode)) return;
-    autoResearchRequestedRef.current.add(currentVenueCode);
-    refreshMarketResearch();
+    
+    // Auto-search if we have no market research OR if we have it but no sources
+    const needsResearch = !marketResearch || !Array.isArray(marketResearch.sources) || marketResearch.sources.length === 0;
+    
+    if (needsResearch) {
+      autoResearchRequestedRef.current.add(currentVenueCode);
+      refreshMarketResearch();
+    }
   }, [venue, currentVenueCode, marketResearch, refreshMarketResearch]);
 
   const statusColor = useMemo(() => {
@@ -1396,63 +1404,92 @@ export default function VenueDetailPage() {
             </div>
 
             <div className="venue-card" style={{ marginTop: "24px" }}>
-              <div className="venue-card-title">
-                Market Information & Source Summary
-                <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
-                  Venue-wise intelligence summary with verified source links
-                </span>
+              <div className="venue-card-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  Market Information & Source Summary
+                  <span style={{ fontSize: "12px", color: "#94a3b8", fontWeight: 400, marginLeft: "12px" }}>
+                    Live internet search results and market intelligence
+                  </span>
+                </div>
+                <button 
+                  className="mp-back-small-btn" 
+                  onClick={() => {
+                    refreshMarketResearch();
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                  disabled={isSearchingWeb}
+                >
+                  <span>🔄</span> {isSearchingWeb ? "Searching..." : "Search Web Again"}
+                </button>
               </div>
-              {marketResearch ? (
-                <div className="market-research-panel">
-                  <div className="market-simple-grid">
-                    <div className="market-simple-card">
-                      <div className="market-research-subtitle">Market Intelligence Summary</div>
-                      {marketExecutiveBrief ? (
-                        <>
-                          <div className="market-exec-title">{marketExecutiveBrief.title}</div>
-                          <div className="market-simple-summary">{marketExecutiveBrief.paragraph}</div>
-                          <ul className="market-exec-list">
-                            {marketExecutiveBrief.highlights.map((line, idx) => (
-                              <li key={`exec-highlight-${idx}`}>{line}</li>
-                            ))}
-                          </ul>
-                          <div className="market-exec-recommendation">
-                            Recommendation: {marketExecutiveBrief.recommendation}
-                          </div>
-                          <div className="market-simple-meta">
-                            <span>{marketExecutiveBrief.status || "Research pending"}</span>
-                            <span>{marketExecutiveBrief.confidence || "Low"} confidence</span>
-                            {marketExecutiveBrief.updatedAt ? <span>Updated: {marketExecutiveBrief.updatedAt}</span> : null}
-                          </div>
-                        </>
+              {isSearchingWeb ? (
+                <div className="google-no-info" style={{ padding: "40px", background: "#f8fbff", border: "1px dashed #cbd5e1" }}>
+                  <span className="google-no-info-icon" style={{ animation: "pulse 1.5s infinite" }}>⏳</span>
+                  <div className="google-no-info-text">Live Web Search in Progress...</div>
+                  <div className="google-no-info-sub">Scanning public directories and websites for venue information.</div>
+                </div>
+              ) : marketResearch ? (
+                <div className="market-research-panel ai-overview-panel">
+                  <div className="ai-overview-header">
+                    <span className="ai-overview-icon">✨</span> AI Overview
+                  </div>
+                  <div style={{ paddingTop: "12px" }}>
+                    <div className="market-summary-content">
+                      {(marketResearch.sources || []).length > 0 ? (
+                        <ul style={{ listStyleType: "disc", paddingLeft: "20px" }}>
+                          {marketResearch.sources.map((source, idx) => {
+                            const domain = getSourceHost(source.url) || "Source";
+                            const favicon = domain.charAt(0).toUpperCase();
+                            return (
+                              <li key={`actual-info-${idx}`} style={{ marginBottom: "16px", lineHeight: "1.7", color: "#334155" }}>
+                                {source.note || "No snippet available for this source."}
+                                <a
+                                  href={source.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "6px",
+                                    background: "#f1f5f9",
+                                    padding: "2px 10px 2px 4px",
+                                    borderRadius: "16px",
+                                    marginLeft: "10px",
+                                    textDecoration: "none",
+                                    color: "#475569",
+                                    fontSize: "11.5px",
+                                    fontWeight: 600,
+                                    border: "1px solid #e2e8f0",
+                                    verticalAlign: "middle",
+                                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                                  }}
+                                  title={source.label || domain}
+                                >
+                                  <span style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: "#ffffff",
+                                    width: "18px",
+                                    height: "18px",
+                                    borderRadius: "50%",
+                                    fontSize: "10px",
+                                    color: "#3b82f6",
+                                    border: "1px solid #cbd5e1"
+                                  }}>
+                                    {favicon}
+                                  </span>
+                                  {domain}
+                                </a>
+                              </li>
+                            );
+                          })}
+                        </ul>
                       ) : (
-                        <div className="market-simple-summary">
-                          Summary is being prepared from public internet sources.
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="market-simple-card">
-                      <div className="market-research-subtitle">Verified Sources</div>
-                      {(marketResearch.sources || []).length ? (
-                        <div className="market-source-list">
-                          {marketResearch.sources.map((source, idx) => (
-                            <a
-                              key={`${source.url || source.label}-${idx}`}
-                              className="market-source-link"
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <span>{idx + 1}. {source.label || getSourceHost(source.url) || "Source"}</span>
-                              <strong>{getSourceHost(source.url)}</strong>
-                              {source.note ? <small>{source.note}</small> : null}
-                            </a>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="market-research-no-source">
-                          No source attached yet. Use refresh to fetch internet references.
+                        <div style={{ padding: "16px", color: "#475569", background: "#f8fafc", borderRadius: "8px", border: "1px dashed #cbd5e1", lineHeight: "1.6" }}>
+                          <span style={{ fontSize: "16px", marginRight: "8px" }}>🔍</span>
+                          We scanned the web for <strong>{pretty(venue.name)}</strong> but couldn't find any highly confident public references. 
+                          The venue might not be listed publicly under this exact name.
                         </div>
                       )}
                     </div>
@@ -1462,7 +1499,7 @@ export default function VenueDetailPage() {
                 <div className="google-no-info">
                   <span className="google-no-info-icon">MR</span>
                   <div className="google-no-info-text">No market research available for this venue</div>
-                  <div className="google-no-info-sub">Add source-backed market research to show venue-specific analysis here.</div>
+                  <div className="google-no-info-sub">Click "Search Web Again" to perform a live internet search.</div>
                 </div>
               )}
             </div>

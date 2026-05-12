@@ -1387,30 +1387,27 @@ export default function ManpowerDashboardPage() {
       needsClearManpowerFilter = hasAnyManpowerFilter(manpowerFilter);
       clearPendingManpowerFilter();
       needsClearVenueCode = Boolean(selectedVenueCode);
-      hasBootstrappedQueryRef.current = true;
     } else if (effectiveFilter?.dmsCode) {
       searchCandidates = [String(effectiveFilter.dmsCode || "").trim()].filter(Boolean);
       setSearch(searchCandidates[0] || "");
       needsClearManpowerFilter = hasAnyManpowerFilter(manpowerFilter);
       clearPendingManpowerFilter();
       needsClearVenueCode = Boolean(selectedVenueCode);
-      hasBootstrappedQueryRef.current = true;
     } else if (selectedVenueCode) {
       searchCandidates = [String(selectedVenueCode || "").trim()].filter(Boolean);
       setSearch(searchCandidates[0] || "");
       needsClearVenueCode = true;
       clearPendingManpowerFilter();
-      hasBootstrappedQueryRef.current = true;
     } else if (!hasBootstrappedQueryRef.current) {
       searchCandidates = [""];
       clearPendingManpowerFilter();
-      hasBootstrappedQueryRef.current = true;
     } else {
       return undefined;
     }
 
     let cancelled = false;
     const timer = setTimeout(async () => {
+      hasBootstrappedQueryRef.current = true;
       const candidates = searchCandidates.length ? searchCandidates : [""];
       for (const candidate of candidates) {
         if (cancelled) return;
@@ -2588,6 +2585,15 @@ export default function ManpowerDashboardPage() {
     }
     goTo("dashboard");
   };
+
+  if (busy && !result) {
+    return (
+      <div className="loading-screen">
+        <div className="loader" />
+        <p>Loading manpower data... (this may take up to 30 seconds)</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mp-page">

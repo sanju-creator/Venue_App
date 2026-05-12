@@ -285,9 +285,6 @@ export default function Sidebar({
         {globalSearchConfig ? (
           <div className="sidebar-global-search">
             <div className="search-title">Global Search</div>
-            <div className="search-desc">
-              Search people, modules, and records from one place.
-            </div>
             <div className="search-flex">
               <input
                 className="search-input"
