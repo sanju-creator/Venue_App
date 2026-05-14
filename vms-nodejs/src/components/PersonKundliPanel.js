@@ -27,6 +27,36 @@ function categoryClass(category) {
   return String(category || "-").replace("-", "").toLowerCase();
 }
 
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(toNum(value))));
+}
+
+function maskCsv(value, maskToken) {
+  return splitCsv(value)
+    .map(maskToken)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function maskPhoneToken(phone) {
+  const raw = String(phone || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  const visible = digits.slice(-4);
+  const hidden = "*".repeat(Math.max(0, digits.length - 4));
+  return `${hidden}${visible}`;
+}
+
+function maskEmailToken(email) {
+  const raw = String(email || "").trim();
+  if (!raw) return "";
+  const [local = "", domain = ""] = raw.split("@");
+  const visible = local.slice(0, Math.min(2, local.length));
+  const suffix = local.length > 2 ? "****" : "***";
+  if (!domain) return `${visible}${suffix}`;
+  return `${visible}${suffix}@${domain}`;
+}
+
 function StatusBadge({ ok, yesLabel = "Available", noLabel = "Missing" }) {
   return (
     <span className={`pk-doc-badge ${ok ? "pk-doc-yes" : "pk-doc-no"}`}>
@@ -147,7 +177,16 @@ function DeepDetailBlock({ detail, onBack, onSyncCurrentVenue }) {
   );
 }
 
-export default function PersonKundliPanel({ data, loading, error, onClose, onSyncCurrentVenue }) {
+export default function PersonKundliPanel({
+  data,
+  loading,
+  error,
+  onClose,
+  onSyncCurrentVenue,
+  canDownload = false,
+  downloadBusy = false,
+  onDownload = null,
+}) {
   const [drill, setDrill] = useState(null);
   const [subDrill, setSubDrill] = useState(null);
   const [deepDetail, setDeepDetail] = useState(null);
@@ -177,6 +216,23 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
   const trainingProjectsText = Array.isArray(training?.trainingProjects) && training.trainingProjects.length
     ? training.trainingProjects.slice(0, 4).join(", ")
     : "Not recorded";
+  const attendanceScore = clampScore(scores.attendance);
+  const punctualityScore = clampScore(scores.punctuality);
+  const petCertificationScore = training?.hasPatTraining ? 100 : 0;
+  const totalBatches = toNum(delivery.totalBatches);
+  const fullDelayUnits = toNum(delivery.fullBatchDelay);
+  const partialDelayUnits = toNum(delivery.partialBatchDelay);
+  const weightedDelayUnits = fullDelayUnits + (partialDelayUnits * 0.5);
+  const delayRate = totalBatches > 0 ? Math.min(1, weightedDelayUnits / totalBatches) : 0;
+  const deliveryDelayScore = clampScore((1 - delayRate) * 100);
+  const finalPerformanceScore = clampScore(
+    (attendanceScore * 0.3) +
+    (punctualityScore * 0.3) +
+    (petCertificationScore * 0.15) +
+    (deliveryDelayScore * 0.25),
+  );
+  const maskedPhone = maskCsv(identity.phone, maskPhoneToken) || "-";
+  const maskedEmail = maskCsv(identity.email, maskEmailToken) || "-";
 
   const venueRows = venueRotation || [];
   const projectRows = projectDelivery || [];
@@ -535,28 +591,30 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
             <div className="pk-name">{identity.name}</div>
             <div className="pk-empid">ID: {identity.empId}</div>
           </div>
-          {rp.classification ? (
-            <div className={`pk-class-badge pk-class-${rp.classification.replace(/\s+/g, "").toLowerCase()}`}>
-              {rp.classificationIcon} {rp.classification} <span className="pk-class-score">{rp.overallRating}/100</span>
-            </div>
-          ) : null}
         </div>
-        <button className="pk-close-btn" onClick={onClose}>X</button>
+        <div className="pk-header-actions">
+          {canDownload && onDownload ? (
+            <button className="mp-back-small-btn" onClick={onDownload} disabled={downloadBusy}>
+              {downloadBusy ? "Downloading..." : "Download"}
+            </button>
+          ) : null}
+          <button className="pk-close-btn" onClick={onClose}>X</button>
+        </div>
       </div>
 
       <div className="pk-section-row">
         <div className="pk-card pk-card-half">
           <div className="pk-card-title">Contact Information</div>
-          <div className="pk-kv"><span>Phone</span><strong>{identity.phone}</strong></div>
-          <div className="pk-kv"><span>Email</span><strong style={{ fontSize: "12px", wordBreak: "break-all" }}>{identity.email}</strong></div>
+          <div className="pk-kv"><span>Phone</span><strong>{maskedPhone}</strong></div>
+          <div className="pk-kv"><span>Email</span><strong style={{ fontSize: "12px", wordBreak: "break-all" }}>{maskedEmail}</strong></div>
           <div className="pk-kv"><span>Roles</span><strong>{summary.roles}</strong></div>
           <div className="pk-kv"><span>Tenure</span><strong>{summary.tenures}</strong></div>
         </div>
         <div className="pk-card pk-card-half">
           <div className="pk-card-title">Document Compliance</div>
           <div className="pk-docs-grid">
-            <StatusBadge ok={identity.hasPhone} yesLabel="Phone Verified" noLabel="Phone Missing" />
-            <StatusBadge ok={identity.hasEmail} yesLabel="Email Verified" noLabel="Email Missing" />
+            <StatusBadge ok={identity.hasPhone} yesLabel="Phone Available" noLabel="Phone Missing" />
+            <StatusBadge ok={identity.hasEmail} yesLabel="Email Available" noLabel="Email Missing" />
             <StatusBadge ok={identity.hasGovtId} yesLabel="Govt ID Submitted" noLabel="Govt ID Missing" />
             <StatusBadge ok={identity.hasDeclaration} yesLabel="Declaration Signed" noLabel="Declaration Missing" />
             <StatusBadge ok={examDuty?.hasExamDuty} yesLabel="Exam Duty Logged" noLabel="Exam Duty Not Logged" />
@@ -579,19 +637,19 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
         <div className="pk-kpi-strip">
           <div className={kpiClass("projects")} data-tooltip="View details" onClick={() => toggleDrill("projects")}>
             <div className="pk-kpi-value">{summary.uniqueProjects}</div>
-            <div className="pk-kpi-label">Projects {drill === "projects" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Projects</div>
           </div>
           <div className={kpiClass("drives")} data-tooltip="View details" onClick={() => toggleDrill("drives")}>
             <div className="pk-kpi-value">{summary.uniqueDrives}</div>
-            <div className="pk-kpi-label">Drives {drill === "drives" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Drives</div>
           </div>
           <div className={kpiClass("venues")} data-tooltip="View details" onClick={() => toggleDrill("venues")}>
             <div className="pk-kpi-value">{summary.uniqueVenues}</div>
-            <div className="pk-kpi-label">Venues {drill === "venues" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Venues</div>
           </div>
           <div className={kpiClass("records")} data-tooltip="View details" onClick={() => toggleDrill("records")}>
             <div className="pk-kpi-value">{summary.totalRecords}</div>
-            <div className="pk-kpi-label">Records {drill === "records" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Records</div>
           </div>
         </div>
         {drill === "projects" ? (
@@ -658,27 +716,27 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
         <div className="pk-kpi-strip pk-delivery-strip">
           <div className={`${kpiClass("batches")} pk-kpi-neutral`} data-tooltip="View details" onClick={() => toggleDrill("batches")}>
             <div className="pk-kpi-value">{delivery.totalBatches}</div>
-            <div className="pk-kpi-label">Batches {drill === "batches" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Batches</div>
           </div>
           <div className={`${kpiClass("fullDelay")} pk-kpi-danger`} data-tooltip="View details" onClick={() => toggleDrill("fullDelay")}>
             <div className="pk-kpi-value">{delivery.fullBatchDelay}</div>
-            <div className="pk-kpi-label">Full Delay {drill === "fullDelay" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Full Delay</div>
           </div>
           <div className={`${kpiClass("partialDelay")} pk-kpi-warn`} data-tooltip="View details" onClick={() => toggleDrill("partialDelay")}>
             <div className="pk-kpi-value">{delivery.partialBatchDelay}</div>
-            <div className="pk-kpi-label">Partial {drill === "partialDelay" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Partial</div>
           </div>
           <div className={`${kpiClass("noDelayDrill")} pk-kpi-good`} data-tooltip="View details" onClick={() => toggleDrill("noDelayDrill")}>
             <div className="pk-kpi-value">{delivery.noDelay}</div>
-            <div className="pk-kpi-label">No Delay {drill === "noDelayDrill" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">No Delay</div>
           </div>
           <div className={`${kpiClass("ffaDrill")} pk-kpi-danger`} data-tooltip="View details" onClick={() => toggleDrill("ffaDrill")}>
             <div className="pk-kpi-value">{delivery.ffa}</div>
-            <div className="pk-kpi-label">FFA {drill === "ffaDrill" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">FFA</div>
           </div>
           <div className={`${kpiClass("clDrill")} ${delivery.callLogs > 0 ? "pk-kpi-danger" : "pk-kpi-good"}`} data-tooltip="View details" onClick={() => toggleDrill("clDrill")}>
             <div className="pk-kpi-value">{delivery.callLogs}</div>
-            <div className="pk-kpi-label">Call Logs {drill === "clDrill" ? "?" : "?"}</div>
+            <div className="pk-kpi-label">Call Logs</div>
           </div>
         </div>
         {drill === "batches" ? (
@@ -779,54 +837,18 @@ export default function PersonKundliPanel({ data, loading, error, onClose, onSyn
         </div>
       ) : null}
 
-      {rp.scores ? (
-        <div className="pk-card pk-resource-section">
-          <div className="pk-card-title">Parameters for Rating Performance</div>
-          <div className="pk-resource-top">
-            <div className={`pk-class-hero pk-class-${(rp.classification || "").replace(/\s+/g, "").toLowerCase()}`}>
-              <div className="pk-class-hero-icon">{rp.classificationIcon}</div>
-              <div className="pk-class-hero-label">{rp.classification}</div>
-              <div className="pk-class-hero-score">{rp.overallRating}<span>/100</span></div>
-            </div>
-            <div className="pk-scores-grid">
-              <ScoreBar label="Attendance" score={scores.attendance} />
-              <ScoreBar label="Punctuality" score={scores.punctuality} />
-              <ScoreBar label="Productivity" score={scores.productivity} />
-              <ScoreBar label="Task Completion" score={scores.taskCompletion} />
-              <ScoreBar label="Feedback" score={scores.feedback} />
-              <ScoreBar label="Compliance" score={scores.compliance} />
-            </div>
-          </div>
-
-          <div className="pk-sw-grid">
-            <div className="pk-sw-col pk-sw-strengths">
-              <div className="pk-sw-title">Strengths</div>
-              {(rp.strengths || []).length > 0 ? (
-                rp.strengths.map((s, i) => <div key={i} className="pk-sw-item pk-sw-good">+ {s}</div>)
-              ) : (
-                <div className="pk-sw-item pk-sw-empty">No notable strengths identified</div>
-              )}
-            </div>
-            <div className="pk-sw-col pk-sw-weaknesses">
-              <div className="pk-sw-title">Areas of Concern</div>
-              {(rp.weaknesses || []).length > 0 ? (
-                rp.weaknesses.map((w, i) => <div key={i} className="pk-sw-item pk-sw-bad">- {w}</div>)
-              ) : (
-                <div className="pk-sw-item pk-sw-empty">No concerns identified</div>
-              )}
-            </div>
-          </div>
-
-          {(rp.recommendations || []).length > 0 ? (
-            <div className="pk-reco-section">
-              <div className="pk-sw-title">Highlights</div>
-              {rp.recommendations.map((r, i) => (
-                <div key={i} className="pk-reco-item">{"-> "}{r}</div>
-              ))}
-            </div>
-          ) : null}
+      <div className="pk-card pk-resource-section">
+        <div className="pk-card-title">
+          Performance Score (4-Parameter Model)
+          <span className="pk-card-badge">{finalPerformanceScore}/100</span>
         </div>
-      ) : null}
+        <div className="pk-scores-grid">
+          <ScoreBar label="Attendance (30%)" score={attendanceScore} />
+          <ScoreBar label="Punctuality (30%)" score={punctualityScore} />
+          <ScoreBar label="PET Certification (15%)" score={petCertificationScore} />
+          <ScoreBar label="Delivery Delays (25%)" score={deliveryDelayScore} />
+        </div>
+      </div>
 
       <div className="pk-card">
         <div className="pk-card-title">Venue-Wise Rotation History <span className="pk-card-badge">{venueRows.length} venue(s)</span></div>

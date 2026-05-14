@@ -59,6 +59,11 @@ const STATUS_COLORS = {
   "CUSTOMER SPECIFIC BLACKLISTED": "#2fbaab",
 };
 
+const OPERATIONAL_COLORS = {
+  DATC: "#2f6fdd",
+  DOTC: "#60a5fa",
+};
+
 const STATUS_CHART_KEY_TO_STATUS = {
   ACTIVE: "ACTIVE",
   BLACKLISTED: "BLACKLISTED",
@@ -74,11 +79,11 @@ const CATEGORY_CHART_KEY_TO_CATEGORY = {
 };
 
 const CATEGORY_MEANINGS = {
-  A: "Fully ready",
-  B: "Operational with minor gaps",
-  C: "Needs improvement",
-  BL: "Blacklisted",
-  "BL-C": "Customer-specific blacklist",
+  A: "Good venue",
+  B: "Average venue ",
+  C: "Sensitive venue",
+  BL: "Blacklisted venue",
+  "BL-C": "Customer-specific blacklisted venue",
 };
 
 const CATEGORY_LABEL_FLOAT_OFFSETS = {
@@ -203,7 +208,6 @@ const KPI_BAR_COLORS = [
 ];
 const UNIFIED_EMPLOYEE_TYPES = ["DEXIT", "Outsourced"];
 const MANPOWER_ANALYTICS_USERS = ["Admin", "Prafull"];
-const SEARCH_SCOPES = ["all", "person", "venue"];
 
 function sumBy(rows, getter) {
   return rows.reduce((sum, row) => sum + toNumber(getter(row)), 0);
@@ -298,62 +302,6 @@ function buildVenueSearchResults(rows, query, options = {}) {
   return resultRows.slice(0, limit);
 }
 
-function getPersonSearchMatch(person, query) {
-  const normalizedQuery = normalizeSearchToken(query);
-  if (!normalizedQuery) {
-    return { matched: true, score: 99 };
-  }
-
-  const tokens = splitSearchTokens(normalizedQuery);
-  if (!tokens.length) {
-    return { matched: true, score: 99 };
-  }
-
-  const name = normalizeSearchToken(person?.personName);
-  const empId = normalizeSearchToken(person?.empId);
-  const primaryText = `${name} ${empId}`.trim();
-  const boundaryChecks = tokens.map((token) => new RegExp(`\\b${escapeRegExp(token)}\\b`, "i"));
-
-  if (name === normalizedQuery || empId === normalizedQuery) {
-    return { matched: true, score: 0 };
-  }
-  if (boundaryChecks.every((regex) => regex.test(primaryText))) {
-    return { matched: true, score: 1 };
-  }
-  if (name.startsWith(normalizedQuery) || empId.startsWith(normalizedQuery)) {
-    return { matched: true, score: 2 };
-  }
-  if (tokens.every((token) => primaryText.includes(token))) {
-    return { matched: true, score: 3 };
-  }
-  return { matched: false, score: Number.POSITIVE_INFINITY };
-}
-
-function buildPersonSearchResults(rows, query, limit = 8) {
-  const normalizedQuery = normalizeSearchToken(query);
-  const resultRows = [];
-
-  rows.forEach((row) => {
-    const match = getPersonSearchMatch(row, normalizedQuery);
-    if (!match.matched) return;
-    resultRows.push({ row, score: match.score });
-  });
-
-  resultRows.sort((left, right) => {
-    if (left.score !== right.score) return left.score - right.score;
-    const leftName = normalizeSearchToken(left.row?.personName);
-    const rightName = normalizeSearchToken(right.row?.personName);
-    const nameCompare = leftName.localeCompare(rightName, "en", { sensitivity: "base" });
-    if (nameCompare !== 0) return nameCompare;
-    return normalizeSearchToken(left.row?.empId).localeCompare(normalizeSearchToken(right.row?.empId), "en", { sensitivity: "base" });
-  });
-
-  if (!normalizedQuery || limit <= 0) {
-    return resultRows;
-  }
-  return resultRows.slice(0, limit);
-}
-
 function DashboardTable({ headers, rows, footerRow }) {
   const { openVenueDetail, openManpowerAnalytics } = useApp();
   const isNumericText = (value) => /^[\d,\s]+$/.test(String(value || "").trim());
@@ -419,8 +367,7 @@ export default function Dashboard() {
 
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [includeLocationSearch, setIncludeLocationSearch] = useState(false);
-  const [searchScope, setSearchScope] = useState("all");
+  const [manpowerQuickSearch, setManpowerQuickSearch] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activePerspective, setActivePerspective] = useState("venue");
   const venuePerspectiveRef = useRef(null);
@@ -489,6 +436,16 @@ export default function Dashboard() {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, []);
+
+  const handleManpowerQuickSearch = useCallback(() => {
+    const query = String(manpowerQuickSearch || "").trim();
+    if (!query) return;
+    const payload = { search: query };
+    setSelectedVenueCode("");
+    setManpowerFilter(payload);
+    persistPendingManpowerFilter(payload);
+    goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
+  }, [goTo, manpowerQuickSearch, persistPendingManpowerFilter, setManpowerFilter, setSelectedVenueCode]);
 
 
   useEffect(() => {
@@ -645,21 +602,20 @@ export default function Dashboard() {
   }, [sidebarScopedRows, selectedFilters, topFilters]);
 
   const appliedVenueSearchResults = useMemo(
-    () => buildVenueSearchResults(venueSearchScopeRows, searchQuery, { includeLocation: includeLocationSearch, limit: 0 }),
-    [venueSearchScopeRows, searchQuery, includeLocationSearch],
+    () => buildVenueSearchResults(venueSearchScopeRows, searchQuery, { includeLocation: true, limit: 0 }),
+    [venueSearchScopeRows, searchQuery],
   );
 
   const rowsWithoutStatusFilter = useMemo(() => {
     if (!selectedFilters) return [];
-    if (searchScope === "person") return venueSearchScopeRows;
     if (!searchQuery.trim()) return venueSearchScopeRows;
     return appliedVenueSearchResults.map((entry) => entry.row);
-  }, [venueSearchScopeRows, selectedFilters, searchQuery, appliedVenueSearchResults, searchScope]);
+  }, [venueSearchScopeRows, selectedFilters, searchQuery, appliedVenueSearchResults]);
 
   const venueSearchResults = useMemo(() => {
-    return buildVenueSearchResults(venueSearchScopeRows, searchInput, { includeLocation: includeLocationSearch, limit: 10 })
+    return buildVenueSearchResults(venueSearchScopeRows, searchInput, { includeLocation: true, limit: 10 })
       .map((entry) => entry.row);
-  }, [venueSearchScopeRows, searchInput, includeLocationSearch]);
+  }, [venueSearchScopeRows, searchInput]);
 
   const filteredRows = useMemo(() => {
     if (!selectedFilters) return [];
@@ -760,21 +716,6 @@ export default function Dashboard() {
       uniqueVenues: entry.venueNames.size,
     }));
   }, [manpowerSnapshot]);
-
-  const personSearchResults = useMemo(
-    () => buildPersonSearchResults(globalPersonDirectory, searchInput, 10).map((entry) => entry.row),
-    [globalPersonDirectory, searchInput],
-  );
-
-  const visibleVenueSearchResults = useMemo(() => {
-    if (searchScope === "person") return [];
-    return venueSearchResults;
-  }, [searchScope, venueSearchResults]);
-
-  const visiblePersonSearchResults = useMemo(() => {
-    if (searchScope === "venue") return [];
-    return personSearchResults;
-  }, [searchScope, personSearchResults]);
 
   const categoryPieData = useMemo(() => {
     const total = filteredRows.length;
@@ -999,18 +940,12 @@ export default function Dashboard() {
     setTopFilters({ region: "", state: "", examCityCentre: "" });
     setSearchInput("");
     setSearchQuery("");
-    setIncludeLocationSearch(false);
-    setSearchScope("all");
     resetDrilldown();
   };
 
   const handleSearch = () => {
     const cleaned = searchInput.trim();
     if (!cleaned) {
-      setSearchQuery("");
-      return;
-    }
-    if (searchScope === "person") {
       setSearchQuery("");
       return;
     }
@@ -1232,19 +1167,16 @@ export default function Dashboard() {
 
     const manpowerPersonMatches = globalPersonDirectory
       .filter((person) => {
-        const haystack = [
-          person.personName,
-          person.empId,
-          person.phone,
-          person.rolesList.join(" "),
-          person.statesList.join(" "),
-          person.citiesList.join(" "),
-          person.venueList.join(" "),
-          person.dmsCodeList.join(" "),
-        ]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(query);
+        const name = normalizeSearchToken(person.personName);
+        const empId = normalizeSearchToken(person.empId);
+        const primaryText = `${name} ${empId}`.trim();
+        const tokens = splitSearchTokens(query);
+        const boundaryChecks = tokens.map((token) => new RegExp(`\\b${escapeRegExp(token)}\\b`, "i"));
+
+        if (name === query || empId === query) return true;
+        if (boundaryChecks.length && boundaryChecks.every((regex) => regex.test(primaryText))) return true;
+        if (name.startsWith(query) || empId.startsWith(query)) return true;
+        return tokens.every((token) => primaryText.includes(token));
       })
       .slice(0, 10)
       .map((person) => {
@@ -1446,26 +1378,53 @@ export default function Dashboard() {
     return counts;
   }, [filteredRows]);
 
-  const stateSummary = useMemo(() => {
+  const mapCapacitySummary = useMemo(() => {
     if (!filteredRows.length) return null;
-    const states = new Map();
+    const uniqueStates = new Set();
+    const uniqueDistricts = new Set();
+    const uniqueCities = new Set();
+
     filteredRows.forEach((row) => {
-      const s = row.state;
-      if (!s) return;
-      if (!states.has(s)) states.set(s, { count: 0, capacity: 0 });
-      const entry = states.get(s);
-      entry.count += 1;
+      if (row.state) uniqueStates.add(row.state);
+      if (row.district) uniqueDistricts.add(row.district);
+      if (row.city) uniqueCities.add(row.city);
+    });
+
+    let scopeLabel = "States";
+    let getGroupName = (row) => row.state || "Unknown";
+
+    if (uniqueCities.size === 1) {
+      scopeLabel = "Venues";
+      getGroupName = (row) => row.name || row.dmsCode || "Unknown Venue";
+    } else if (uniqueDistricts.size === 1) {
+      scopeLabel = "Cities";
+      getGroupName = (row) => row.city || "Unknown";
+    } else if (uniqueStates.size === 1) {
+      scopeLabel = "Districts";
+      getGroupName = (row) => row.district || "Unknown";
+    }
+
+    const groups = new Map();
+    filteredRows.forEach((row) => {
+      const groupName = getGroupName(row);
+      if (!groups.has(groupName)) groups.set(groupName, { capacity: 0 });
+      const entry = groups.get(groupName);
       entry.capacity += toNumber(row.venueMaxCapacity);
     });
 
-    const sorted = Array.from(states.entries()).sort((a, b) => b[1].capacity - a[1].capacity);
+    const sorted = Array.from(groups.entries())
+      .sort((a, b) => {
+        if (b[1].capacity !== a[1].capacity) return b[1].capacity - a[1].capacity;
+        return String(a[0]).localeCompare(String(b[0]), "en", { sensitivity: "base" });
+      });
     if (!sorted.length) return null;
 
     return {
-      totalStates: sorted.length,
-      maxState: sorted[0][0],
+      scopeLabel,
+      totalGroups: sorted.length,
+      maxName: sorted[0][0],
       maxCapacity: sorted[0][1].capacity,
-      minState: sorted[sorted.length - 1][0],
+      minName: sorted[sorted.length - 1][0],
       minCapacity: sorted[sorted.length - 1][1].capacity
     };
   }, [filteredRows]);
@@ -1503,16 +1462,6 @@ export default function Dashboard() {
         globalSearchConfig={{
           placeholder: "Type name or code and press Search",
           resolve: resolveGlobalSearchResults,
-          onSearch: (query) => {
-            const token = String(query || "").trim();
-            setSearchInput(token);
-            setSearchQuery(token);
-            setSearchScope("all");
-            switchPerspective("venue");
-            requestAnimationFrame(() => {
-              venueSearchRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            });
-          },
         }}
         mobileOpen={mobileSidebarOpen}
         onToggleMobile={() => setMobileSidebarOpen((prev) => !prev)}
@@ -1559,6 +1508,8 @@ export default function Dashboard() {
                     Manpower Perspective
                   </button>
                 ) : null}
+
+
               </div>
             </div>
             <div className="dash-logo">
@@ -1567,38 +1518,40 @@ export default function Dashboard() {
           </div>
 
           <div className="kpi-row kpi-row-dashboard" id="venue-perspective-section" ref={venuePerspectiveRef}>
-          {KPI_CARDS.map((card) => {
-            const val = kpis[card.key];
-            const isBlacklisted = card.key === "blacklisted" || card.key === "blacklistedSeatCapacity";
-            const isInactive = card.key === "inactive";
-            const severityClass = isBlacklisted && val > 0 ? " kpi-severity-critical" : isInactive && val > 0 ? " kpi-severity-warning" : "";
-            const severityIcon = isBlacklisted && val > 0 ? "🔴" : isInactive && val > 0 ? "🟡" : "";
-            return (
-              <button
-                key={card.key}
-                data-tooltip="Click to drill down"
-                className={`kpi-box with-view kpi-clickable${drilldownPath.key === card.key ? " kpi-active" : ""}${severityClass}`}
-                style={{ "--kpi-accent": card.color }}
-                onClick={() => {
-                  if (drilldownPath.key === card.key) {
-                    resetDrilldown();
-                  } else {
-                    setDrilldownPath({ type: 'kpi', key: card.key, region: null, state: null, district: null, city: null });
-                    document.getElementById("drilldown-section")?.scrollIntoView({ behavior: "smooth" });
-                  }
-                }}
-              >
-                <div className="kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
-                <div className="kpi-val">{formatCount(val)}</div>
-                <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "Drill down"}</div>
-              </button>
-            );
-          })}
+            {KPI_CARDS.map((card) => {
+              const val = kpis[card.key];
+              const isBlacklisted = card.key === "blacklisted" || card.key === "blacklistedSeatCapacity";
+              const isInactive = card.key === "inactive";
+              const severityClass = isBlacklisted && val > 0 ? " kpi-severity-critical" : isInactive && val > 0 ? " kpi-severity-warning" : "";
+              const severityTone = isBlacklisted && val > 0 ? "critical" : isInactive && val > 0 ? "warning" : "";
+              return (
+                <button
+                  key={card.key}
+                  data-tooltip="Click to drill down"
+                  className={`kpi-box with-view kpi-clickable${drilldownPath.key === card.key ? " kpi-active" : ""}${severityClass}`}
+                  style={{ "--kpi-accent": card.color }}
+                  onClick={() => {
+                    if (drilldownPath.key === card.key) {
+                      resetDrilldown();
+                    } else {
+                      setDrilldownPath({ type: 'kpi', key: card.key, region: null, state: null, district: null, city: null });
+                      document.getElementById("drilldown-section")?.scrollIntoView({ behavior: "smooth" });
+                    }
+                  }}
+                >
+                  <div className="kpi-title">
+                    {severityTone ? <span className={`kpi-severity-indicator kpi-severity-indicator--${severityTone}`} aria-hidden="true" /> : null}
+                    {card.title}
+                  </div>
+                  <div className="kpi-val">{formatCount(val)}</div>
+                  <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "Drill down"}</div>
+                </button>
+              );
+            })}
           </div>
 
           <div className="search-card dashboard-venue-search" ref={venueSearchRef}>
             <div className="search-title">Venue Search</div>
-            <div className="search-desc">Step 1: Type name/code. Step 2: Choose All, Person, or Venue. Step 3: Click Search and Open.</div>
             <div className="search-flex">
               <input
                 className="search-input"
@@ -1609,295 +1562,42 @@ export default function Dashboard() {
                 }}
                 placeholder="e.g. AP COMPUTER POINT or EST-AR-1161 or ITANAGAR..."
               />
-              <button className="search-btn" onClick={handleSearch}>Search</button>
+              <button className="search-btn" onClick={handleSearch}>Search Venue</button>
             </div>
-            <div className="dashboard-search-scope">
-              {SEARCH_SCOPES.map((scope) => (
-                <button
-                  key={scope}
-                  type="button"
-                  className={`dashboard-search-scope-btn ${searchScope === scope ? "active" : ""}`}
-                  onClick={() => {
-                    setSearchScope(scope);
-                    if (scope === "person") setSearchQuery("");
-                  }}
-                >
-                  {scope === "all" ? "All" : scope === "person" ? "Person" : "Venue"}
-                </button>
-              ))}
-            </div>
-            <label className="search-checkbox-row">
-              <input
-                type="checkbox"
-                checked={includeLocationSearch}
-                onChange={(event) => setIncludeLocationSearch(event.target.checked)}
-                disabled={searchScope === "person"}
-              />
-              <span>Include city, district, and state in search</span>
-            </label>
             {searchInput.trim() ? (
               <div className="search-result-list dashboard-venue-search-results">
-                {searchScope !== "venue" ? (
-                  <div className="dashboard-search-group">
-                    <div className="dashboard-search-group-title">People</div>
-                    {visiblePersonSearchResults.length ? (
-                      visiblePersonSearchResults.map((person) => {
-                        const rolePreview = person.rolesList.slice(0, 2).join(", ") || "Role unavailable";
-                        const locationPreview = [person.citiesList[0], person.statesList[0]].filter(Boolean).join(", ") || "Location unavailable";
-                        const searchToken = String(person.empId || person.personName || "").trim();
-                        return (
-                          <div className="search-result-row" key={`person-result-${person.key}`}>
-                            <div>
-                              <div className="result-main">
-                                {person.personName}
-                                {person.empId ? ` (${person.empId})` : ""}
-                              </div>
-                              <div className="result-sub">{rolePreview} | {locationPreview} | Venues: {person.uniqueVenues}</div>
-                            </div>
-                            <div className="dashboard-inline-search-actions">
-                              <button
-                                className="btn-outline search-result-btn"
-                                onClick={() => {
-                                  const payload = {
-                                    search: searchToken,
-                                    focusEmpId: String(person.empId || "").trim(),
-                                    personName: person.personName,
-                                  };
-                                  setSelectedVenueCode("");
-                                  setManpowerFilter(payload);
-                                  persistPendingManpowerFilter(payload);
-                                  goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
-                                }}
-                              >
-                                Open
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="search-empty">No person match found.</div>
-                    )}
-                  </div>
-                ) : null}
-
-                {searchScope !== "person" ? (
-                  <div className="dashboard-search-group">
-                    <div className="dashboard-search-group-title">Venues</div>
-                    {visibleVenueSearchResults.length ? (
-                      visibleVenueSearchResults.map((row) => (
-                        <div className="search-result-row" key={`venue-result-${row.dmsCode}`}>
-                          <div>
-                            <div className="result-main">{row.name || "-"}</div>
-                            <div className="result-sub">
-                              {row.dmsCode} | {row.city || "-"}, {row.state || "-"} | {row.status || "-"}
-                            </div>
-                          </div>
-                          <div className="dashboard-inline-search-actions">
-                            <button className="btn-outline search-result-btn" onClick={() => openVenueDetail(row.dmsCode)}>
-                              Open
-                            </button>
-                          </div>
+                {venueSearchResults.length ? (
+                  venueSearchResults.map((row) => (
+                    <div
+                      className="search-result-row search-result-row-clickable"
+                      key={`venue-result-${row.dmsCode}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openVenueDetail(row.dmsCode)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openVenueDetail(row.dmsCode);
+                        }
+                      }}
+                    >
+                      <div>
+                        <div className="result-main">{row.name || "-"}</div>
+                        <div className="result-sub">
+                          {row.dmsCode} | {row.city || "-"}, {row.state || "-"} | {row.status || "-"}
                         </div>
-                      ))
-                    ) : (
-                      <div className="search-empty">No venue match found.</div>
-                    )}
-                  </div>
-                ) : null}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="search-empty">No venue matches found.</div>
+                )}
               </div>
             ) : null}
           </div>
         </div>
 
-        {canViewUnifiedManpower ? (
-          <section className="unified-perspective-section" id="manpower-perspective-section" ref={manpowerPerspectiveRef}>
-            <div className="unified-perspective-head">
-              <h3 className="section-title">Unified View: Manpower Perspective</h3>
-              <button
-                className="mp-action-btn mp-action-btn-primary"
-                onClick={() => goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS })}
-              >
-                Open Detailed Manpower Analytics
-              </button>
-            </div>
-            {manpowerSnapshotError ? <div className="inline-error">{manpowerSnapshotError}</div> : null}
-            {manpowerSnapshotBusy ? (
-              <div className="photo-placeholder" style={{ height: "auto", padding: "18px", borderStyle: "dashed" }}>
-                Loading manpower perspective...
-              </div>
-            ) : (
-              <>
-                <div className="unified-perspective-kpis">
-                  <div className="unified-perspective-kpi"><span>Manpower</span><strong>{formatCount(manpowerSnapshotOverview.manpower)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>Projects</span><strong>{formatCount(manpowerSnapshotOverview.projects)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>Drives</span><strong>{formatCount(manpowerSnapshotOverview.drives)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>Venue Count</span><strong>{formatCount(manpowerSnapshotOverview.venueCount)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>Total Batches</span><strong>{formatCount(manpowerSnapshotOverview.totalBatches)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>No Delay</span><strong>{formatCount(manpowerSnapshotOverview.noBatchDelay)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>Call Logs</span><strong>{formatCount(manpowerSnapshotOverview.callLogs)}</strong></div>
-                  <div className="unified-perspective-kpi"><span>FFA</span><strong>{formatCount(manpowerSnapshotOverview.ffa)}</strong></div>
-                </div>
-
-                <div className="table-wrap" style={{ marginTop: "10px" }}>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Project</th>
-                        <th>Drive Count</th>
-                        <th>Unique Manpower</th>
-                        <th>No Delay</th>
-                        <th>Call Logs</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {manpowerSnapshotProjectRows.length ? (
-                        manpowerSnapshotProjectRows.map((row, idx) => (
-                          <tr key={`unified-mp-project-${row.projectName}-${idx}`}>
-                            <td><strong>{row.projectName || "-"}</strong></td>
-                            <td>{formatCount(row.driveCount || 0)}</td>
-                            <td>{formatCount(row.uniqueManpower || 0)}</td>
-                            <td>{formatCount(row.noBatchDelay || 0)}</td>
-                            <td>{formatCount(row.callLogs || 0)}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={5}>No manpower project snapshot found.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
-          </section>
-        ) : null}
-
-
-
-
-        {drilldownPath.key ? (
-          <div className="kpi-drilldown-section" id="drilldown-section">
-            <div className="drilldown-title-row">
-              <div>
-                <h3>
-                  {drilldownPath.type === 'kpi' && KPI_CARDS.find(c => c.key === drilldownPath.key)?.title}
-                  {drilldownPath.type === 'category' && `Category: ${drilldownPath.key}`}
-                  {drilldownPath.type === 'status' && `Status: ${drilldownPath.key}`}
-                  {drilldownPath.type === 'infra' && `Infra: ${drilldownPath.key}`}
-                  {drilldownPath.type === 'map' && `State: ${drilldownPath.key}`}
-                  {" — Details"}
-                </h3>
-                <Breadcrumbs
-                  path={drilldownPath}
-                  onPop={popDrilldown}
-                  onReset={resetDrilldown}
-                  kpiTitle={
-                    drilldownPath.type === 'kpi' ? KPI_CARDS.find(c => c.key === drilldownPath.key)?.title :
-                      drilldownPath.type === 'category' ? `Category ${drilldownPath.key}` :
-                        drilldownPath.type === 'status' ? `Status ${drilldownPath.key}` :
-                          drilldownPath.type === 'infra' ? drilldownPath.key :
-                            drilldownPath.key
-                  }
-                />
-              </div>
-              <button className="kpi-drilldown-close" onClick={resetDrilldown}>✕ Close</button>
-            </div>
-
-            <div className="kpi-drilldown-body">
-              {activeDrilldownChartData.length > 0 ? (
-                <div className="kpi-drilldown-chart">
-                  <div style={{ marginBottom: '10px', fontSize: '13px', color: '#64748b', fontWeight: 600 }}>
-                    Click a bar to drill deeper
-                    {drilldownPath.city ? ' into Venues' :
-                      drilldownPath.district ? ' into Cities' :
-                        drilldownPath.state ? ' into Districts' :
-                          drilldownPath.region ? ' into States' : ' into Regions'}
-                  </div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <BarChart
-                      data={activeDrilldownChartData}
-                      onClick={(data) => {
-                        if (data && data.activePayload && data.activePayload[0]) {
-                          const name = data.activePayload[0].payload.name;
-                          if (!drilldownPath.region) pushDrilldown('region', name);
-                          else if (!drilldownPath.state) pushDrilldown('state', name);
-                          else if (!drilldownPath.district) pushDrilldown('district', name);
-                          else if (!drilldownPath.city) pushDrilldown('city', name);
-                          else if (!drilldownPath.venue) {
-                            const exact = activeDrilldownRows.find(r => r.name === name);
-                            if (exact) {
-                              openVenueDetail(exact.dmsCode);
-                            }
-                          }
-                        }
-                      }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#475569", fontSize: 12 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar
-                        dataKey="value"
-                        fill={
-                          drilldownPath.type === 'kpi' ? (KPI_CARDS.find(c => c.key === drilldownPath.key)?.color || "#3f7fdd") :
-                            drilldownPath.type === 'category' ? (PIE_COLORS[drilldownPath.key] || "#3f7fdd") :
-                              "#3f7fdd"
-                        }
-                        radius={[6, 6, 0, 0]}
-                        className="mp-clickable-bar"
-                        style={{ cursor: 'pointer' }}
-                        onClick={(data) => {
-                          if (data && data.name) {
-                            const name = data.name;
-                            if (!drilldownPath.region) pushDrilldown('region', name);
-                            else if (!drilldownPath.state) pushDrilldown('state', name);
-                            else if (!drilldownPath.district) pushDrilldown('district', name);
-                            else if (!drilldownPath.city) pushDrilldown('city', name);
-                            else if (!drilldownPath.venue) {
-                              const exact = activeDrilldownRows.find(r => r.name === name);
-                              if (exact) {
-                                openVenueDetail(exact.dmsCode);
-                              }
-                            }
-                          }
-                        }}
-                      >
-                        <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : null}
-              <div className="kpi-drilldown-summary">
-                <div className="kpi-drilldown-stat"><span>Total Venues</span><strong>{formatCount(activeDrilldownRows.length)}</strong></div>
-                <div className="kpi-drilldown-stat"><span>Total Capacity</span><strong>{formatCount(sumBy(activeDrilldownRows, (r) => r.venueMaxCapacity))}</strong></div>
-                <div className="kpi-drilldown-stat">
-                  <span>
-                    {drilldownPath.district ? 'Cities' : drilldownPath.state ? 'Districts' : drilldownPath.region ? 'States' : 'Regions'}
-                  </span>
-                  <strong>{activeDrilldownChartData.length || 1}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="kpi-drilldown-table-wrap">
-              <h4>
-                Venue Details
-                {drilldownPath.city ? ` in ${drilldownPath.city}` :
-                  drilldownPath.district ? ` in ${drilldownPath.district}` :
-                    drilldownPath.state ? ` in ${drilldownPath.state}` :
-                      drilldownPath.region ? ` in ${drilldownPath.region}` : ''}
-                ({formatCount(activeDrilldownTableRows.length)} venues)
-              </h4>
-              <DashboardTable
-                headers={["DMS Code", "Venue Name", "Region", "State", "Exam City Centre", "Reason", "Category", "Capacity"]}
-                rows={activeDrilldownTableRows}
-              />
-            </div>
-          </div>
-        ) : null}
+        
 
         <div className="chart-row-3">
           <div className="chart-col">
@@ -2046,28 +1746,212 @@ export default function Dashboard() {
                 }}
               />
             </div>
-            {stateSummary && (
+            {mapCapacitySummary && (
               <div className="chart-insight-card chart-insight-card--stacked">
                 <div className="chart-insight-row">
-                  <span className="chart-insight-row-label">Total States</span>
-                  <span className="chart-insight-row-value">{stateSummary.totalStates}</span>
+                  <span className="chart-insight-row-label">Total {mapCapacitySummary.scopeLabel}</span>
+                  <span className="chart-insight-row-value">{mapCapacitySummary.totalGroups}</span>
                 </div>
                 <div className="chart-insight-row">
                   <span className="chart-insight-row-label">Max Capacity</span>
                   <span className="chart-insight-row-value">
-                    {stateSummary.maxState} ({formatCount(stateSummary.maxCapacity)})
+                    {mapCapacitySummary.maxName} ({formatCount(mapCapacitySummary.maxCapacity)})
                   </span>
                 </div>
                 <div className="chart-insight-row">
                   <span className="chart-insight-row-label">Min Capacity</span>
                   <span className="chart-insight-row-value">
-                    {stateSummary.minState} ({formatCount(stateSummary.minCapacity)})
+                    {mapCapacitySummary.minName} ({formatCount(mapCapacitySummary.minCapacity)})
                   </span>
                 </div>
               </div>
             )}
           </div>
         </div>
+
+{canViewUnifiedManpower ? (
+          <section className="unified-perspective-section" id="manpower-perspective-section" ref={manpowerPerspectiveRef}>
+            <div className="unified-perspective-head">
+              <h3 className="section-title">Unified View: Manpower Perspective</h3>
+              <div className="unified-manpower-actions">
+                <button
+                  className="mp-action-btn mp-action-btn-primary"
+                  onClick={() => goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS })}
+                >
+                  Open Detailed Manpower Analytics
+                </button>
+                <div className="unified-manpower-search">
+                  <input
+                    type="text"
+                    value={manpowerQuickSearch}
+                    onChange={(event) => setManpowerQuickSearch(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleManpowerQuickSearch();
+                    }}
+                    placeholder="Search manpower by name, pincode, project..."
+                  />
+                  <button
+                    type="button"
+                    className="mp-action-btn"
+                    onClick={handleManpowerQuickSearch}
+                  >
+                    Search
+                  </button>
+                </div>
+              </div>
+            </div>
+            {manpowerSnapshotError ? <div className="inline-error">{manpowerSnapshotError}</div> : null}
+            {manpowerSnapshotBusy ? (
+              <div className="photo-placeholder" style={{ height: "auto", padding: "18px", borderStyle: "dashed" }}>
+                Loading manpower perspective...
+              </div>
+            ) : (
+              <div className="unified-perspective-kpis">
+                <div className="unified-perspective-kpi"><span>Manpower</span><strong>{formatCount(manpowerSnapshotOverview.manpower)}</strong></div>
+                <div className="unified-perspective-kpi"><span>Projects</span><strong>{formatCount(manpowerSnapshotOverview.projects)}</strong></div>
+                <div className="unified-perspective-kpi"><span>Drives</span><strong>{formatCount(manpowerSnapshotOverview.drives)}</strong></div>
+                <div className="unified-perspective-kpi"><span>Venue Count</span><strong>{formatCount(manpowerSnapshotOverview.venueCount)}</strong></div>
+                <div className="unified-perspective-kpi"><span>Total Batches</span><strong>{formatCount(manpowerSnapshotOverview.totalBatches)}</strong></div>
+                <div className="unified-perspective-kpi"><span>No Delay</span><strong>{formatCount(manpowerSnapshotOverview.noBatchDelay)}</strong></div>
+                <div className="unified-perspective-kpi"><span>Call Logs</span><strong>{formatCount(manpowerSnapshotOverview.callLogs)}</strong></div>
+                <div className="unified-perspective-kpi"><span>FFA</span><strong>{formatCount(manpowerSnapshotOverview.ffa)}</strong></div>
+              </div>
+            )}
+          </section>
+        ) : null}
+
+
+
+
+        {drilldownPath.key ? (
+          <div className="kpi-drilldown-section" id="drilldown-section">
+            <div className="drilldown-title-row">
+              <div>
+                <h3>
+                  {drilldownPath.type === 'kpi' && KPI_CARDS.find(c => c.key === drilldownPath.key)?.title}
+                  {drilldownPath.type === 'category' && `Category: ${drilldownPath.key}`}
+                  {drilldownPath.type === 'status' && `Status: ${drilldownPath.key}`}
+                  {drilldownPath.type === 'infra' && `Infra: ${drilldownPath.key}`}
+                  {drilldownPath.type === 'map' && `State: ${drilldownPath.key}`}
+                  {" — Details"}
+                </h3>
+                <Breadcrumbs
+                  path={drilldownPath}
+                  onPop={popDrilldown}
+                  onReset={resetDrilldown}
+                  kpiTitle={
+                    drilldownPath.type === 'kpi' ? KPI_CARDS.find(c => c.key === drilldownPath.key)?.title :
+                      drilldownPath.type === 'category' ? `Category ${drilldownPath.key}` :
+                        drilldownPath.type === 'status' ? `Status ${drilldownPath.key}` :
+                          drilldownPath.type === 'infra' ? drilldownPath.key :
+                            drilldownPath.key
+                  }
+                />
+              </div>
+              <button className="kpi-drilldown-close" onClick={resetDrilldown}>✕ Close</button>
+            </div>
+
+            <div className="kpi-drilldown-body">
+              {activeDrilldownChartData.length > 0 ? (
+                <div className="kpi-drilldown-chart">
+                  <div style={{ marginBottom: '10px', fontSize: '13px', color: '#64748b', fontWeight: 600 }}>
+                    Click a bar to drill deeper
+                    {drilldownPath.city ? ' into Venues' :
+                      drilldownPath.district ? ' into Cities' :
+                        drilldownPath.state ? ' into Districts' :
+                          drilldownPath.region ? ' into States' : ' into Regions'}
+                  </div>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart
+                      data={activeDrilldownChartData}
+                      onClick={(data) => {
+                        if (data && data.activePayload && data.activePayload[0]) {
+                          const name = data.activePayload[0].payload.name;
+                          if (!drilldownPath.region) pushDrilldown('region', name);
+                          else if (!drilldownPath.state) pushDrilldown('state', name);
+                          else if (!drilldownPath.district) pushDrilldown('district', name);
+                          else if (!drilldownPath.city) pushDrilldown('city', name);
+                          else if (!drilldownPath.venue) {
+                            const exact = activeDrilldownRows.find(r => r.name === name);
+                            if (exact) {
+                              openVenueDetail(exact.dmsCode);
+                            }
+                          }
+                        }
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
+                      <XAxis
+                        dataKey="name"
+                        interval={0}
+                        height={62}
+                        angle={-12}
+                        textAnchor="end"
+                        tickMargin={10}
+                        tick={{ fill: "#475569", fontSize: 12 }}
+                      />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                      <RechartsTooltip formatter={(value) => formatCount(value)} />
+                      <Bar
+                        dataKey="value"
+                        fill={
+                          drilldownPath.type === 'kpi' ? (KPI_CARDS.find(c => c.key === drilldownPath.key)?.color || "#3f7fdd") :
+                            drilldownPath.type === 'category' ? (PIE_COLORS[drilldownPath.key] || "#3f7fdd") :
+                              "#3f7fdd"
+                        }
+                        radius={[6, 6, 0, 0]}
+                        className="mp-clickable-bar"
+                        style={{ cursor: 'pointer' }}
+                        onClick={(data) => {
+                          if (data && data.name) {
+                            const name = data.name;
+                            if (!drilldownPath.region) pushDrilldown('region', name);
+                            else if (!drilldownPath.state) pushDrilldown('state', name);
+                            else if (!drilldownPath.district) pushDrilldown('district', name);
+                            else if (!drilldownPath.city) pushDrilldown('city', name);
+                            else if (!drilldownPath.venue) {
+                              const exact = activeDrilldownRows.find(r => r.name === name);
+                              if (exact) {
+                                openVenueDetail(exact.dmsCode);
+                              }
+                            }
+                          }
+                        }}
+                      >
+                        <LabelList dataKey="value" position="top" style={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : null}
+              <div className="kpi-drilldown-summary">
+                <div className="kpi-drilldown-stat"><span>Total Venues</span><strong>{formatCount(activeDrilldownRows.length)}</strong></div>
+                <div className="kpi-drilldown-stat"><span>Total Capacity</span><strong>{formatCount(sumBy(activeDrilldownRows, (r) => r.venueMaxCapacity))}</strong></div>
+                <div className="kpi-drilldown-stat">
+                  <span>
+                    {drilldownPath.district ? 'Cities' : drilldownPath.state ? 'Districts' : drilldownPath.region ? 'States' : 'Regions'}
+                  </span>
+                  <strong>{activeDrilldownChartData.length || 1}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="kpi-drilldown-table-wrap">
+              <h4>
+                Venue Details
+                {drilldownPath.city ? ` in ${drilldownPath.city}` :
+                  drilldownPath.district ? ` in ${drilldownPath.district}` :
+                    drilldownPath.state ? ` in ${drilldownPath.state}` :
+                      drilldownPath.region ? ` in ${drilldownPath.region}` : ''}
+                ({formatCount(activeDrilldownTableRows.length)} venues)
+              </h4>
+              <DashboardTable
+                headers={["DMS Code", "Venue Name", "Region", "State", "Exam City Centre", "Reason", "Category", "Capacity"]}
+                rows={activeDrilldownTableRows}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="section-full">
           <h3>
@@ -2097,10 +1981,11 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <RechartsTooltip formatter={(value) => formatCount(value)} />
+                  <RechartsTooltip formatter={(value) => formatCount(value)} cursor={false} />
                   <Bar
                     dataKey="ACTIVE"
                     fill={STATUS_COLORS.ACTIVE}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleStatusChartBarClick(entry, "ACTIVE")}
                   >
@@ -2109,6 +1994,7 @@ export default function Dashboard() {
                   <Bar
                     dataKey="BLACKLISTED"
                     fill={STATUS_COLORS.BLACKLISTED}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleStatusChartBarClick(entry, "BLACKLISTED")}
                   >
@@ -2117,6 +2003,7 @@ export default function Dashboard() {
                   <Bar
                     dataKey="CUSTOMER_SPECIFIC_BLACKLISTED"
                     fill={STATUS_COLORS["CUSTOMER SPECIFIC BLACKLISTED"]}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleStatusChartBarClick(entry, "CUSTOMER_SPECIFIC_BLACKLISTED")}
                   >
@@ -2125,7 +2012,7 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="half-col">
+            <div className="half-col half-col--axis-start">
               <DashboardTable
                 headers={[
                   "REGION",
@@ -2137,7 +2024,7 @@ export default function Dashboard() {
                 rows={regionSummaries.map((item) => [
                   item.region,
                   renderClickable(<span className="cell-healthy">{formatCount(item.active)}</span>, () => handleStatusChartBarClick(item, "ACTIVE")),
-                  renderClickable(<span className={item.blacklisted > 0 ? "cell-critical" : "cell-zero"}>{item.blacklisted > 0 ? "⚠ " : ""}{formatCount(item.blacklisted)}</span>, () => handleStatusChartBarClick(item, "BLACKLISTED")),
+                  renderClickable(<span className={item.blacklisted > 0 ? "cell-critical" : "cell-zero"}>{item.blacklisted > 0 ? "! " : ""}{formatCount(item.blacklisted)}</span>, () => handleStatusChartBarClick(item, "BLACKLISTED")),
                   renderClickable(<span className={item.customerSpecific > 0 ? "cell-warning" : "cell-zero"}>{formatCount(item.customerSpecific)}</span>, () => handleStatusChartBarClick(item, "CUSTOMER_SPECIFIC_BLACKLISTED")),
                   renderClickable(<strong>{formatCount(item.totalStatus)}</strong>, () => {
                     setDrilldownPath({ type: 'map', key: null, region: item.region, state: null, district: null, city: null });
@@ -2184,10 +2071,11 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <RechartsTooltip formatter={(value) => formatCount(value)} />
+                  <RechartsTooltip formatter={(value) => formatCount(value)} cursor={false} />
                   <Bar
                     dataKey="A"
                     fill={CATEGORY_COLORS.A}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleCategoryChartBarClick(entry, "A")}
                   >
@@ -2196,6 +2084,7 @@ export default function Dashboard() {
                   <Bar
                     dataKey="B"
                     fill={CATEGORY_COLORS.B}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleCategoryChartBarClick(entry, "B")}
                   >
@@ -2204,6 +2093,7 @@ export default function Dashboard() {
                   <Bar
                     dataKey="C"
                     fill={CATEGORY_COLORS.C}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleCategoryChartBarClick(entry, "C")}
                   >
@@ -2212,6 +2102,7 @@ export default function Dashboard() {
                   <Bar
                     dataKey="BL-C"
                     fill={CATEGORY_COLORS["BL-C"]}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleCategoryChartBarClick(entry, "BL-C")}
                   >
@@ -2220,6 +2111,7 @@ export default function Dashboard() {
                   <Bar
                     dataKey="BL"
                     fill={CATEGORY_COLORS.BL}
+                    minPointSize={3}
                     cursor="pointer"
                     onClick={(entry) => handleCategoryChartBarClick(entry, "BL")}
                   >
@@ -2228,7 +2120,7 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="half-col">
+            <div className="half-col half-col--axis-start">
               <DashboardTable
                 headers={["REGION", "A", "B", "C", "BL-C", "BL", "GRAND TOTAL"]}
                 rows={regionSummaries.map((item) => [
@@ -2269,11 +2161,11 @@ export default function Dashboard() {
               <div className="chart-title">Venue Count Distribution</div>
               <div className="chart-legend-row">
                 <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: "#3f7fdd" }} />
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DATC }} />
                   DATC
                 </span>
                 <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: "#7d58e2" }} />
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DOTC }} />
                   DOTC
                 </span>
               </div>
@@ -2283,10 +2175,10 @@ export default function Dashboard() {
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Bar dataKey="DATC" fill="#3f7fdd">
+                  <Bar dataKey="DATC" fill={OPERATIONAL_COLORS.DATC} minPointSize={4}>
                     <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
-                  <Bar dataKey="DOTC" fill="#7d58e2">
+                  <Bar dataKey="DOTC" fill={OPERATIONAL_COLORS.DOTC} minPointSize={4}>
                     <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
                 </BarChart>
@@ -2296,11 +2188,11 @@ export default function Dashboard() {
               <div className="chart-title">Total Seat Capacity</div>
               <div className="chart-legend-row">
                 <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: "#3f7fdd" }} />
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DATC }} />
                   DATC
                 </span>
                 <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: "#7d58e2" }} />
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DOTC }} />
                   DOTC
                 </span>
               </div>
@@ -2310,10 +2202,10 @@ export default function Dashboard() {
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Bar dataKey="DATC" fill="#3f7fdd">
+                  <Bar dataKey="DATC" fill={OPERATIONAL_COLORS.DATC} minPointSize={4}>
                     <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
-                  <Bar dataKey="DOTC" fill="#7d58e2">
+                  <Bar dataKey="DOTC" fill={OPERATIONAL_COLORS.DOTC} minPointSize={4}>
                     <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
                 </BarChart>
@@ -2376,3 +2268,5 @@ export default function Dashboard() {
     </div>
   );
 }
+
+

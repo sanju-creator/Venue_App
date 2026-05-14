@@ -11,7 +11,7 @@ import {
 
 const AppContext = createContext(null);
 
-const API_ORIGIN = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:5001";
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_ORIGIN || "http://localhost:5000";
 const API = `${API_ORIGIN}/api`;
 const USER_KEY = "vms_user";
 const USER_EVENT = "vms_user_changed";

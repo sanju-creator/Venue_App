@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -49,7 +49,10 @@ const DEFAULT_FILTERS = {
 };
 
 const numberFormat = new Intl.NumberFormat("en-IN");
-
+const compactNumberFormat = new Intl.NumberFormat("en-IN", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 function getRankingLimit(scope) {
   if (scope === "top25") return 25;
   if (scope === "full") return Number.POSITIVE_INFINITY;
@@ -1037,6 +1040,15 @@ function formatCount(value) {
   return numberFormat.format(Number(value) || 0);
 }
 
+function formatCompactCount(value) {
+  return compactNumberFormat.format(Number(value) || 0);
+}
+
+function formatAxisTickCount(value) {
+  const numericValue = Number(value) || 0;
+  return numericValue >= 1000 ? formatCompactCount(numericValue) : formatCount(numericValue);
+}
+
 function renderClickable(value, onClick, isText = false) {
   const displayValue = isText ? value : formatCount(value);
   if (!onClick || (!isText && value <= 0)) return <span>{displayValue}</span>;
@@ -1125,6 +1137,78 @@ function parsePersonDetailStats(personDetails) {
   };
 }
 
+function getProfileInitials(name) {
+  const tokens = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!tokens.length) return "MP";
+  if (tokens.length === 1) return tokens[0].slice(0, 2).toUpperCase();
+  return `${tokens[0][0]}${tokens[1][0]}`.toUpperCase();
+}
+
+function ManpowerProfileCard({ row }) {
+  const initials = getProfileInitials(row?.personName);
+  const summaryItems = [
+    { label: "Employee Name", value: row?.personName || "-" },
+    { label: "Employee ID", value: row?.empId || "-" },
+    { label: "Venue Coverage", value: formatCount(row?.venueCoverage || 0) },
+    { label: "Total Batches", value: formatCount(row?.totalBatches || 0) },
+  ];
+  const additionalItems = [
+    { label: "No Delay", value: formatCount(row?.noDelay || 0) },
+    { label: "Call Logs", value: formatCount(row?.callLogs || 0) },
+    { label: "Performance Score", value: Number(row?.score || 0).toFixed(2) },
+    { label: "Profile Status", value: "Active" },
+  ];
+
+  return (
+    <div className="mp-manpower-profile-card">
+      <div className="mp-manpower-profile-left">
+        <div className="mp-manpower-photo-box" role="img" aria-label="Dummy grayscale photograph placeholder">
+          <div className="mp-manpower-photo-initials">{initials}</div>
+          <span>Dummy Grayscale Photo</span>
+        </div>
+        <div className="mp-manpower-doc-grid">
+          <div className="mp-manpower-doc mp-manpower-doc-horizontal">
+            <div className="mp-manpower-doc-title">Government ID Proof</div>
+            <div className="mp-manpower-doc-note">Upload Placeholder</div>
+          </div>
+          <div className="mp-manpower-doc mp-manpower-doc-vertical">
+            <div className="mp-manpower-doc-title">Employee ID Proof</div>
+            <div className="mp-manpower-doc-note">{row?.empId || "Pending"}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mp-manpower-profile-right">
+        <div className="mp-manpower-profile-section">
+          <h4>Summary</h4>
+          <div className="mp-manpower-profile-kv-grid">
+            {summaryItems.map((item) => (
+              <div key={item.label} className="mp-manpower-profile-kv">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mp-manpower-profile-section">
+          <h4>Additional Details</h4>
+          <div className="mp-manpower-profile-kv-grid">
+            {additionalItems.map((item) => (
+              <div key={item.label} className="mp-manpower-profile-kv">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ManpowerDashboardPage() {
   const { fetchApi, goTo, selectedVenueCode, setSelectedVenueCode, manpowerFilter, setManpowerFilter, openVenueDetail, user } = useApp();
   const [search, setSearch] = useState("");
@@ -1135,7 +1219,7 @@ export default function ManpowerDashboardPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
-  const [advancedOpen, setAdvancedOpen] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1163,6 +1247,7 @@ export default function ManpowerDashboardPage() {
   const [performanceRankings, setPerformanceRankings] = useState(null);
   const [performanceBusy, setPerformanceBusy] = useState(false);
   const [performanceError, setPerformanceError] = useState("");
+  const [expandedProfilePersonKey, setExpandedProfilePersonKey] = useState("");
   const [lastQueryPayload, setLastQueryPayload] = useState(null);
   const [returnToGlobalSearchQuery, setReturnToGlobalSearchQuery] = useState("");
 
@@ -1224,6 +1309,17 @@ export default function ManpowerDashboardPage() {
     );
   }, [user]);
 
+  const buildPerformancePersonKey = useCallback((row, index) => {
+    const personName = String(row?.personName || "").trim();
+    const empId = String(row?.empId || "").trim();
+    return `${empId || "NA"}::${personName || index}`;
+  }, []);
+
+  const togglePerformancePersonProfile = useCallback((row, index) => {
+    const key = buildPerformancePersonKey(row, index);
+    setExpandedProfilePersonKey((prev) => (prev === key ? "" : key));
+  }, [buildPerformancePersonKey]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -1236,6 +1332,12 @@ export default function ManpowerDashboardPage() {
       // Ignore parsing failures.
     }
   }, []);
+
+  useEffect(() => {
+    if (performanceView !== "manpower") {
+      setExpandedProfilePersonKey("");
+    }
+  }, [performanceView]);
 
   const loadPerformanceRankings = useCallback(
     async (queryPayload, scopeOverride = performanceScope) => {
@@ -1673,6 +1775,19 @@ export default function ManpowerDashboardPage() {
   const regionCategoryRows = useMemo(
     () => result?.regionCategorySummary || [],
     [result],
+  );
+  const regionCategoryChartRows = useMemo(
+    () =>
+      regionCategoryRows.map((row) => ({
+        ...row,
+        totalUniqueManpower:
+          Number(row.categoryAUniqueManpower || 0) +
+          Number(row.categoryBUniqueManpower || 0) +
+          Number(row.categoryCUniqueManpower || 0) +
+          Number(row.categoryBlcUniqueManpower || 0) +
+          Number(row.categoryBlUniqueManpower || 0),
+      })),
+    [regionCategoryRows],
   );
   const manpowerWiseRows = useMemo(
     () => result?.manpowerWiseSummary || [],
@@ -2613,7 +2728,43 @@ export default function ManpowerDashboardPage() {
         </div>
       </div>
 
-      <div className="mp-filter-card">
+      <section className="mp-metrics-section">
+        <h2>Overall Metrics</h2>
+
+        <div className="mp-kpi-grid">
+          {kpiCards.map((card) => {
+            const val = card.value;
+            const isCritical = card.key === "fullBatchDelay" || card.key === "callLogs";
+            const isWarning = card.key === "partialBatchDelay" || card.key === "ffa";
+            const severityClass = isCritical && val > 0 ? " kpi-severity-critical" : isWarning && val > 0 ? " kpi-severity-warning" : "";
+            const severityIcon = isCritical && val > 0 ? "🔴" : isWarning && val > 0 ? "🟡" : "";
+            
+            return (
+              <div 
+                key={card.key} 
+                data-tooltip="Click to drill down"
+                className={`mp-kpi-card mp-kpi-clickable${drilldownPath.metric === card.key ? ' active' : ''}${severityClass}`} 
+                style={{ "--card-color": card.color }}
+                onClick={() => {
+                  if (drilldownPath.metric === card.key) resetDrilldown();
+                  else {
+                    setDrilldownPath({ metric: card.key, region: null, state: null, district: null, city: null, venue: null });
+                    document.getElementById("mp-drilldown-section")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+              >
+                <div className="mp-kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
+                <div className="mp-kpi-value">{formatCount(card.value)}</div>
+                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "Hide details" : "Drill down"}</div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+
+
+      <div className="mp-filter-card mp-filter-card--compact">
         <div className="mp-filter-header">
           <h3>Dashboard Filters</h3>
           <div className="mp-filter-actions">
@@ -2623,7 +2774,7 @@ export default function ManpowerDashboardPage() {
         </div>
 
         <div className="mp-filter-body">
-          <div className="mp-top-grid">
+          <div className="mp-top-grid mp-top-grid--compact-3">
             <div className="mp-field">
               <label>Search</label>
               <input
@@ -2694,7 +2845,7 @@ export default function ManpowerDashboardPage() {
 
             {advancedOpen ? (
               <div className="mp-advanced-body">
-                <div className="mp-select-grid mp-select-grid-6">
+                <div className="mp-select-grid mp-select-grid-6 mp-select-grid--compact-4">
                   <SelectField
                     label="Project Name"
                     value={filters.project}
@@ -2725,7 +2876,7 @@ export default function ManpowerDashboardPage() {
                   />
                 </div>
 
-                <div className="mp-select-grid mp-select-grid-4" style={{ marginTop: '20px' }}>
+                <div className="mp-select-grid mp-select-grid-4 mp-select-grid--compact-3" style={{ marginTop: "10px" }}>
                   <SelectField
                     label="Region"
                     value={filters.region}
@@ -2741,11 +2892,11 @@ export default function ManpowerDashboardPage() {
                     placeholder="All States"
                   />
                   <SelectField
-                    label="Exam City Centre"
+                    label="Exam City"
                     value={filters.examCityCentre}
                     onChange={(value) => updateFilter("examCityCentre", value)}
                     options={filteredOptions.examCityCentres || []}
-                    placeholder="All City Centres"
+                    placeholder="All Cities"
                   />
                 </div>
               </div>
@@ -2756,40 +2907,6 @@ export default function ManpowerDashboardPage() {
 
       {error ? <div className="inline-error">{error}</div> : null}
       {busy ? <div className="mp-busy">Updating dashboard...</div> : null}
-
-      <section className="mp-metrics-section">
-        <h2>Overall Metrics</h2>
-
-        <div className="mp-kpi-grid">
-          {kpiCards.map((card) => {
-            const val = card.value;
-            const isCritical = card.key === "fullBatchDelay" || card.key === "callLogs";
-            const isWarning = card.key === "partialBatchDelay" || card.key === "ffa";
-            const severityClass = isCritical && val > 0 ? " kpi-severity-critical" : isWarning && val > 0 ? " kpi-severity-warning" : "";
-            const severityIcon = isCritical && val > 0 ? "🔴" : isWarning && val > 0 ? "🟡" : "";
-            
-            return (
-              <div 
-                key={card.key} 
-                data-tooltip="Click to drill down"
-                className={`mp-kpi-card mp-kpi-clickable${drilldownPath.metric === card.key ? ' active' : ''}${severityClass}`} 
-                style={{ "--card-color": card.color }}
-                onClick={() => {
-                  if (drilldownPath.metric === card.key) resetDrilldown();
-                  else {
-                    setDrilldownPath({ metric: card.key, region: null, state: null, district: null, city: null, venue: null });
-                    document.getElementById("mp-drilldown-section")?.scrollIntoView({ behavior: "smooth" });
-                  }
-                }}
-              >
-                <div className="mp-kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
-                <div className="mp-kpi-value">{formatCount(card.value)}</div>
-                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "Hide details" : "Drill down"}</div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
 
       {canViewPerformanceRankings ? (
         <section className="mp-performance-section">
@@ -2858,30 +2975,49 @@ export default function ManpowerDashboardPage() {
                     <th>Total Batches</th>
                     <th>No Delay</th>
                     <th>Call Logs</th>
-                    <th>Performance Score</th>
                   </tr>
                 </thead>
                 <tbody>
                   {performanceBusy ? (
                     <tr>
-                      <td colSpan={8}>Loading performance rankings...</td>
+                      <td colSpan={7}>Loading performance rankings...</td>
                     </tr>
                   ) : manpowerPerformanceRows.length ? (
-                    manpowerPerformanceRows.map((row, index) => (
-                      <tr key={`perf-manpower-${row.empId || row.personName}-${index}`}>
-                        <td>{index + 1}</td>
-                        <td>{row.personName}</td>
-                        <td>{row.empId || "-"}</td>
-                        <td>{formatCount(row.venueCoverage || 0)}</td>
-                        <td>{formatCount(row.totalBatches)}</td>
-                        <td>{formatCount(row.noDelay)}</td>
-                        <td>{formatCount(row.callLogs)}</td>
-                        <td><strong>{row.score}</strong></td>
-                      </tr>
-                    ))
+                    manpowerPerformanceRows.map((row, index) => {
+                      const personKey = buildPerformancePersonKey(row, index);
+                      const isExpanded = expandedProfilePersonKey === personKey;
+                      return (
+                        <Fragment key={`perf-manpower-${personKey}`}>
+                          <tr>
+                            <td>{index + 1}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className={`mp-person-name-btn${isExpanded ? " is-open" : ""}`}
+                                onClick={() => togglePerformancePersonProfile(row, index)}
+                              >
+                                {row.personName || "Unknown"}
+                              </button>
+                            </td>
+                            <td>{row.empId || "-"}</td>
+                            <td>{formatCount(row.venueCoverage || 0)}</td>
+                            <td>{formatCount(row.totalBatches)}</td>
+                            <td>{formatCount(row.noDelay)}</td>
+                            <td>{formatCount(row.callLogs)}</td>
+                          </tr>
+                          {isExpanded ? (
+                            <tr className="mp-profile-row">
+                              <td colSpan={7}>
+                                <ManpowerProfileCard row={row} />
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={8}>No manpower performance data available.</td>
+                      <td colSpan={7}>No manpower performance data available.</td>
                     </tr>
                   )}
                 </tbody>
@@ -2900,14 +3036,13 @@ export default function ManpowerDashboardPage() {
                     <th>Unique Manpower</th>
                     <th>Total No Delay</th>
                     <th>Call Logs</th>
-                    <th>Performance Score</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {performanceBusy ? (
                     <tr>
-                      <td colSpan={8}>Loading performance rankings...</td>
+                      <td colSpan={7}>Loading performance rankings...</td>
                     </tr>
                   ) : venuePerformanceRows.length ? (
                     venuePerformanceRows.map((row, index) => (
@@ -2918,7 +3053,6 @@ export default function ManpowerDashboardPage() {
                         <td>{formatCount(row.uniqueManpower || 0)}</td>
                         <td>{formatCount(row.noBatchDelay || 0)}</td>
                         <td>{formatCount(row.callLogs || 0)}</td>
-                        <td><strong>{row.score}</strong></td>
                         <td>
                           <button className="mp-cell-mini-btn" onClick={() => openVenueDetail(row.dmsCode)} title="View venue details">
                             Open
@@ -2928,7 +3062,7 @@ export default function ManpowerDashboardPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8}>No venue performance data available.</td>
+                      <td colSpan={7}>No venue performance data available.</td>
                     </tr>
                   )}
                 </tbody>
@@ -2947,13 +3081,12 @@ export default function ManpowerDashboardPage() {
                     <th>Unique Manpower</th>
                     <th>No Delay</th>
                     <th>Call Logs</th>
-                    <th>Performance Score</th>
                   </tr>
                 </thead>
                 <tbody>
                   {performanceBusy ? (
                     <tr>
-                      <td colSpan={7}>Loading performance rankings...</td>
+                      <td colSpan={6}>Loading performance rankings...</td>
                     </tr>
                   ) : projectPerformanceRows.length ? (
                     projectPerformanceRows.map((row, index) => (
@@ -2964,12 +3097,11 @@ export default function ManpowerDashboardPage() {
                         <td>{formatCount(row.uniqueManpower || 0)}</td>
                         <td>{formatCount(row.noBatchDelay || 0)}</td>
                         <td>{formatCount(row.callLogs || 0)}</td>
-                        <td><strong>{row.score}</strong></td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7}>No project performance data available.</td>
+                      <td colSpan={6}>No project performance data available.</td>
                     </tr>
                   )}
                 </tbody>
@@ -3537,8 +3669,11 @@ export default function ManpowerDashboardPage() {
               <div className="chart-container" style={{ height: "100%", minHeight: "350px", width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
                 <ResponsiveContainer width="100%" height={330}>
                   <BarChart 
-                    data={regionCategoryRows} 
-                    barSize={28}
+                    data={regionCategoryChartRows} 
+                    barSize={26}
+                    barCategoryGap="26%"
+                    maxBarSize={38}
+                    margin={{ top: 26, right: 12, left: 4, bottom: 8 }}
                     onClick={(data) => {
                       if (data && data.activePayload && data.activePayload[0]) {
                         const region = data.activeLabel;
@@ -3564,20 +3699,38 @@ export default function ManpowerDashboardPage() {
                   >
                     <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="region" tick={{ fill: "#64748b", fontSize: 13, fontWeight: 500 }} axisLine={false} tickLine={false} tickMargin={12} />
-                    <YAxis tick={{ fill: "#64748b", fontSize: 13, fontWeight: 500 }} axisLine={false} tickLine={false} tickMargin={12} />
-                    <RechartsTooltip 
-                      cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }}
-                      contentStyle={{ backgroundColor: '#ffffff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)', padding: '12px' }}
-                      itemStyle={{ fontSize: '13px', fontWeight: 500, padding: '2px 0' }}
-                      labelStyle={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}
-                      formatter={(value) => formatCount(value)} 
+                    <YAxis
+                      domain={[0, (max) => {
+                        const numericMax = Number(max) || 0;
+                        if (numericMax <= 0) return 10;
+                        return Math.ceil(numericMax * 1.18 + 4);
+                      }]}
+                      tickFormatter={formatAxisTickCount}
+                      width={58}
+                      tick={{ fill: "#64748b", fontSize: 13, fontWeight: 500 }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickMargin={12}
+                    />
+                    <RechartsTooltip
+                      cursor={{ fill: "rgba(241, 245, 249, 0.5)" }}
+                      contentStyle={{
+                        backgroundColor: "#ffffff",
+                        borderRadius: "8px",
+                        border: "1px solid #e2e8f0",
+                        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+                        padding: "12px",
+                      }}
+                      itemStyle={{ fontSize: "13px", fontWeight: 500, padding: "2px 0" }}
+                      labelStyle={{ fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}
+                      formatter={(value) => formatCount(value)}
                     />
                     <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontWeight: 500, fontSize: '13px', color: '#64748b' }} />
-                    <Bar dataKey="categoryAUniqueManpower" name="A" stackId="a" fill="#818cf8" />
-                    <Bar dataKey="categoryBUniqueManpower" name="B" stackId="a" fill="#38bdf8" />
-                    <Bar dataKey="categoryCUniqueManpower" name="C" stackId="a" fill="#fcd34d" />
-                    <Bar dataKey="categoryBlcUniqueManpower" name="BL-C (Blacklisted)" stackId="a" fill="#fdba74" />
-                    <Bar dataKey="categoryBlUniqueManpower" name="BL" stackId="a" fill="#fca5a5" />
+                    <Bar activeBar={false} dataKey="categoryAUniqueManpower" name="A" stackId="a" fill="#818cf8" />
+                    <Bar activeBar={false} dataKey="categoryBUniqueManpower" name="B" stackId="a" fill="#38bdf8" />
+                    <Bar activeBar={false} dataKey="categoryCUniqueManpower" name="C" stackId="a" fill="#fcd34d" />
+                    <Bar activeBar={false} dataKey="categoryBlcUniqueManpower" name="BL-C (Blacklisted)" stackId="a" fill="#fdba74" />
+                    <Bar activeBar={false} dataKey="categoryBlUniqueManpower" name="BL" stackId="a" fill="#fca5a5" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

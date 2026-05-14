@@ -57,9 +57,17 @@ function getSourceHost(url) {
   }
 }
 
+const PROFILE_DOWNLOAD_ALLOWED_USERS = ["Admin", "Prafull"];
+const PROFILE_DOWNLOAD_ALLOWED_ROLES = ["Admin", "SuperAdmin", "OperationsHead"];
+const PROFILE_DOWNLOAD_ALLOWED_PERMISSIONS = [
+  "download_person_profile",
+  "download_sensitive_profile",
+  "person_profile_download",
+];
+
 
 export default function VenueDetailPage() {
-  const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo, API, setManpowerFilter, openVenueDetail } = useApp();
+  const { selectedVenueCode, setSelectedVenueCode, fetchApi, goTo, API, setManpowerFilter, openVenueDetail, user } = useApp();
   const [searchCode, setSearchCode] = useState(selectedVenueCode || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -77,6 +85,8 @@ export default function VenueDetailPage() {
   const [personData, setPersonData] = useState(null);
   const [personLoading, setPersonLoading] = useState(false);
   const [personError, setPersonError] = useState("");
+  const [profileDownloadBusy, setProfileDownloadBusy] = useState(false);
+  const [profileDownloadError, setProfileDownloadError] = useState("");
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileMaximized, setProfileMaximized] = useState(false);
   const [currentVenueDrillKey, setCurrentVenueDrillKey] = useState("");
@@ -215,6 +225,7 @@ export default function VenueDetailPage() {
     setProfileMaximized(false);
     setPersonLoading(true);
     setPersonError("");
+    setProfileDownloadError("");
     setPersonData(null);
     try {
       const data = await fetchApi(`manpower/person/${encodeURIComponent(empId)}`);
@@ -321,7 +332,61 @@ export default function VenueDetailPage() {
   const closeProfileModal = useCallback(() => {
     setShowProfileModal(false);
     setProfileMaximized(false);
+    setProfileDownloadError("");
   }, []);
+
+  const canDownloadPersonProfile = useMemo(() => {
+    if (!user) return false;
+    const permissionList = Array.isArray(user.permissions) ? user.permissions : [];
+    const roleName = String(user.role || user.userType || "").trim();
+    return (
+      PROFILE_DOWNLOAD_ALLOWED_USERS.includes(user.user) ||
+      PROFILE_DOWNLOAD_ALLOWED_ROLES.includes(roleName) ||
+      PROFILE_DOWNLOAD_ALLOWED_PERMISSIONS.some((permission) => permissionList.includes(permission))
+    );
+  }, [user]);
+
+  const downloadPersonProfile = useCallback(async () => {
+    if (!canDownloadPersonProfile || profileDownloadBusy) return;
+    const empId = String(selectedEmpId || selectedManpower?.empId || personData?.identity?.empId || "").trim();
+    if (!empId) {
+      setProfileDownloadError("Employee ID not available for download.");
+      return;
+    }
+
+    setProfileDownloadBusy(true);
+    setProfileDownloadError("");
+    try {
+      const response = await fetch(`${API}/manpower/person/${encodeURIComponent(empId)}/download`, {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || errorPayload?.message || "Unable to download profile right now.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+      const decodedName = filenameMatch ? decodeURIComponent(filenameMatch[1].replace(/"/g, "").trim()) : "";
+      const fallbackName = `${(selectedManpower?.name || "person_profile").replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_${empId}.json`;
+      const downloadName = decodedName || fallbackName;
+
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = downloadName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setProfileDownloadError(err.message || "Unable to download profile right now.");
+    } finally {
+      if (isMountedRef.current) setProfileDownloadBusy(false);
+    }
+  }, [API, canDownloadPersonProfile, personData?.identity?.empId, profileDownloadBusy, selectedEmpId, selectedManpower]);
 
   const focusCurrentVenueInfo = useCallback(() => {
     const node = currentVenueInfoRef.current;
@@ -2055,11 +2120,15 @@ export default function VenueDetailPage() {
                       Close
                     </button>
                   </div>
+                  {profileDownloadError ? <div className="inline-error" style={{ marginBottom: "8px" }}>{profileDownloadError}</div> : null}
                   <PersonKundliPanel
                     data={personData}
                     loading={personLoading}
                     error={personError}
                     onClose={closeProfileModal}
+                    canDownload={canDownloadPersonProfile}
+                    downloadBusy={profileDownloadBusy}
+                    onDownload={downloadPersonProfile}
                     onSyncCurrentVenue={() => {
                       closeProfileModal();
                       focusCurrentVenueInfo();

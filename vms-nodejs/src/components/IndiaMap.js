@@ -148,9 +148,9 @@ export default function IndiaMap({ data, onStateClick }) {
                   const stateName = geo.properties.st_nm || geo.properties.name;
                   const normalizedName = STATE_NAME_MAPPING[stateName] || stateName;
                   
-                  // Only show label for states with data or major states
+                  // Show labels only for states that currently have data.
                   const count = data[normalizedName] || 0;
-                  if (count === 0 && !["Delhi", "Goa"].includes(normalizedName)) return null;
+                  if (count === 0) return null;
 
                   return (
                     <Marker key={geo.rsmKey + "-label"} coordinates={centroid}>
