@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -12,8 +12,10 @@ import {
   LabelList,
   Legend,
 } from "recharts";
+import { ChevronsRight } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import Breadcrumbs from "@/components/Breadcrumbs";
+import Sidebar from "@/components/Sidebar";
 
 const EMPLOYEE_TYPES = ["DEXIT", "Outsourced"];
 const DELAY_OPTIONS = ["Full Batch Delay", "Partially Batch Delay", "No Delay"];
@@ -22,6 +24,15 @@ const DATE_MODES = {
   all: "all",
   custom: "custom",
 };
+const MATRIX_SERIES_COLORS = [
+  "#7AA6D8",
+  "#94C3A2",
+  "#E7C57B",
+  "#AFA7E8",
+  "#E49AA9",
+  "#84D1CF",
+  "#B8C2D0",
+];
 const CATEGORY_COLUMNS = [
   { code: "A", key: "categoryAUniqueManpower", label: "A" },
   { code: "B", key: "categoryBUniqueManpower", label: "B" },
@@ -47,6 +58,9 @@ const DEFAULT_FILTERS = {
   state: "",
   examCityCentre: "",
 };
+const TENURE_ORDER_LOOKUP = new Map(
+  TENURE_COLUMNS.map((column, index) => [String(column.code || "").toLowerCase(), index]),
+);
 
 const numberFormat = new Intl.NumberFormat("en-IN");
 const compactNumberFormat = new Intl.NumberFormat("en-IN", {
@@ -261,6 +275,133 @@ function ManpowerWiseTable({ rows, onCellClick }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RegionMatrixTable({ rows, buckets, emptyMessage = "No data found for selected filters." }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Region</th>
+            {buckets.map((bucket) => (
+              <th key={`bucket-head-${bucket.key}`}>{bucket.label}</th>
+            ))}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length ? (
+            rows.map((row) => (
+              <tr key={`matrix-row-${row.region}`}>
+                <td>{row.region}</td>
+                {buckets.map((bucket) => (
+                  <td key={`matrix-cell-${row.region}-${bucket.key}`}>{formatCount(row[bucket.key] || 0)}</td>
+                ))}
+                <td>{formatCount(row.total || 0)}</td>
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={buckets.length + 2}>{emptyMessage}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RegionMatrixSection({ title, rows, buckets }) {
+  const tableColRef = useRef(null);
+  const [chartBoxHeight, setChartBoxHeight] = useState(350);
+
+  useLayoutEffect(() => {
+    const tableEl = tableColRef.current;
+    if (!tableEl) return undefined;
+
+    const syncHeight = () => {
+      const measured = tableEl.getBoundingClientRect().height || 0;
+      if (measured > 0) {
+        setChartBoxHeight((prev) => {
+          const next = Math.max(320, Math.round(measured));
+          return prev === next ? prev : next;
+        });
+      }
+    };
+
+    syncHeight();
+
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(() => syncHeight());
+    observer.observe(tableEl);
+    return () => observer.disconnect();
+  }, [rows, buckets]);
+
+  const chartInnerHeight = Math.max(250, chartBoxHeight - 32);
+
+  return (
+    <>
+      <h3 className="section-title">{title}</h3>
+      <div className="flex-table-row">
+        <div className="half-col">
+          <div className="chart-container" style={{ height: `${chartBoxHeight}px`, minHeight: `${chartBoxHeight}px`, width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
+            {rows.length && buckets.length ? (
+              <ResponsiveContainer width="100%" height={chartInnerHeight}>
+                <BarChart
+                  data={rows}
+                  barSize={22}
+                  barCategoryGap="22%"
+                  maxBarSize={34}
+                  margin={{ top: 26, right: 12, left: 4, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="region" tick={{ fill: "#64748b", fontSize: 13, fontWeight: 500 }} axisLine={false} tickLine={false} tickMargin={12} />
+                  <YAxis
+                    tickFormatter={formatAxisTickCount}
+                    width={58}
+                    tick={{ fill: "#64748b", fontSize: 13, fontWeight: 500 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickMargin={12}
+                  />
+                  <RechartsTooltip
+                    cursor={{ fill: "rgba(241, 245, 249, 0.5)" }}
+                    contentStyle={{
+                      backgroundColor: "#ffffff",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+                      padding: "12px",
+                    }}
+                    itemStyle={{ fontSize: "13px", fontWeight: 500, padding: "2px 0" }}
+                    labelStyle={{ fontSize: "13px", fontWeight: 600, color: "#475569", marginBottom: "6px" }}
+                    formatter={(value) => formatCount(value)}
+                  />
+                  <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ paddingBottom: "20px", fontWeight: 500, fontSize: "13px", color: "#64748b" }} />
+                  {buckets.map((bucket, index) => (
+                    <Bar
+                      key={`matrix-bar-${bucket.key}`}
+                      activeBar={false}
+                      dataKey={bucket.key}
+                      name={bucket.label}
+                      stackId="a"
+                      fill={MATRIX_SERIES_COLORS[index % MATRIX_SERIES_COLORS.length]}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="mp-drilldown-end-msg">No chart data available for current filters.</div>
+            )}
+          </div>
+        </div>
+        <div className="half-col" ref={tableColRef}>
+          <RegionMatrixTable rows={rows} buckets={buckets} />
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -1059,6 +1200,95 @@ function renderClickable(value, onClick, isText = false) {
   );
 }
 
+function normalizeWorkforceType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized.includes("out")) return "outsource";
+  if (normalized.includes("own")) return "owned";
+  return normalized;
+}
+
+function normalizeBucketLabel(value) {
+  const text = String(value || "").trim();
+  return text || "Unknown";
+}
+
+function toBucketKey(label) {
+  return `bucket_${String(label || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "unknown"}`;
+}
+
+function getTenureSortIndex(label) {
+  const key = String(label || "").trim().toLowerCase();
+  if (TENURE_ORDER_LOOKUP.has(key)) return TENURE_ORDER_LOOKUP.get(key);
+  return Number.POSITIVE_INFINITY;
+}
+
+function buildRegionMatrixSummary(sourceRows, { bucketField, workforceType = null, maxBuckets = 7 }) {
+  const matrix = new Map();
+  const bucketTotals = new Map();
+
+  sourceRows.forEach((row) => {
+    if (workforceType && normalizeWorkforceType(row.workforceType) !== workforceType) return;
+
+    const region = normalizeBucketLabel(row.region);
+    const bucketLabel = normalizeBucketLabel(row[bucketField]);
+    const value = Number(row.uniqueManpowerCount ?? row.uniqueManpower ?? 0);
+    if (!Number.isFinite(value) || value <= 0) return;
+
+    if (!matrix.has(region)) matrix.set(region, new Map());
+    const regionMap = matrix.get(region);
+    regionMap.set(bucketLabel, (regionMap.get(bucketLabel) || 0) + value);
+    bucketTotals.set(bucketLabel, (bucketTotals.get(bucketLabel) || 0) + value);
+  });
+
+  const sortedBuckets = Array.from(bucketTotals.entries())
+    .sort((a, b) => {
+      if (bucketField === "tenure") {
+        const idxA = getTenureSortIndex(a[0]);
+        const idxB = getTenureSortIndex(b[0]);
+        if (idxA !== idxB) return idxA - idxB;
+      }
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0], "en", { sensitivity: "base" });
+    });
+
+  const headCount = Math.max(1, maxBuckets - 1);
+  const topBuckets = sortedBuckets.slice(0, headCount);
+  const otherBuckets = sortedBuckets.slice(headCount);
+  const hasOthers = otherBuckets.length > 0;
+
+  const buckets = [
+    ...topBuckets.map(([label]) => ({ label, key: toBucketKey(label) })),
+    ...(hasOthers ? [{ label: "Others", key: "bucket_others" }] : []),
+  ];
+
+  const bucketKeyMap = new Map(topBuckets.map(([label]) => [label, toBucketKey(label)]));
+
+  const rows = Array.from(matrix.entries())
+    .sort((a, b) => a[0].localeCompare(b[0], "en", { sensitivity: "base" }))
+    .map(([region, regionMap]) => {
+      const row = { region, total: 0 };
+      buckets.forEach((bucket) => {
+        row[bucket.key] = 0;
+      });
+      regionMap.forEach((value, label) => {
+        const key = bucketKeyMap.get(label);
+        if (key) row[key] += value;
+        else if (hasOthers) row.bucket_others += value;
+      });
+      row.total = Object.entries(row)
+        .filter(([key]) => key.startsWith("bucket_"))
+        .reduce((sum, [, value]) => sum + Number(value || 0), 0);
+      return row;
+    });
+
+  return { rows, buckets };
+}
+
 function StatusCheck({ checked, presentLabel = "Available", missingLabel = "Missing" }) {
   return (
     <span className={`mp-status-check ${checked ? "is-yes" : "is-no"}`}>
@@ -1147,59 +1377,157 @@ function getProfileInitials(name) {
   return `${tokens[0][0]}${tokens[1][0]}`.toUpperCase();
 }
 
-function ManpowerProfileCard({ row }) {
+function ManpowerProfileCard({ row, sourceRows = [], onClose }) {
   const initials = getProfileInitials(row?.personName);
-  const summaryItems = [
-    { label: "Employee Name", value: row?.personName || "-" },
-    { label: "Employee ID", value: row?.empId || "-" },
-    { label: "Venue Coverage", value: formatCount(row?.venueCoverage || 0) },
-    { label: "Total Batches", value: formatCount(row?.totalBatches || 0) },
+  const empId = String(row?.empId || "").trim();
+  const normalizedName = String(row?.personName || "").trim().toLowerCase();
+  const matchedRows = (sourceRows || []).filter((entry) => {
+    const entryEmpId = String(entry?.empId || "").trim();
+    const entryName = String(entry?.personName || "").trim().toLowerCase();
+    if (empId && entryEmpId) return empId === entryEmpId;
+    return normalizedName && entryName === normalizedName;
+  });
+
+  const phones = new Set();
+  const emails = new Set();
+  const roles = new Set();
+  const tenures = new Set();
+  const projectNames = new Set();
+  const venueNames = new Set();
+  let declarationAvailable = false;
+  let govtIdAvailable = false;
+  let trainingCompleted = false;
+  let totalDetailEntries = 0;
+
+  matchedRows.forEach((entry) => {
+    const details = String(entry?.personDetails || "");
+    const phoneValue = getDetailBlock(details, "Mobile");
+    const emailValue = getDetailBlock(details, "Email");
+    const roleValue = getDetailBlock(details, "Role");
+    const tenureValue = getDetailBlock(details, "Tenure");
+    const declarationValue = getDetailBlock(details, "Declaration");
+    const govtIdValue = getDetailBlock(details, "Govt ID") || getDetailBlock(details, "Government ID");
+    const trainingValue = getDetailBlock(details, "PAT Training") || getDetailBlock(details, "Training");
+
+    if (phoneValue && phoneValue !== "-") phones.add(phoneValue);
+    if (emailValue && emailValue !== "-") emails.add(emailValue);
+    if (roleValue && roleValue !== "-") roleValue.split(",").map((item) => item.trim()).filter(Boolean).forEach((item) => roles.add(item));
+    if (tenureValue && tenureValue !== "-") tenureValue.split(",").map((item) => item.trim()).filter(Boolean).forEach((item) => tenures.add(item));
+    if (String(declarationValue || "").match(/yes|available|submitted|done|complete/i)) declarationAvailable = true;
+    if (String(govtIdValue || "").match(/yes|available|submitted|done|verified/i)) govtIdAvailable = true;
+    if (String(trainingValue || "").match(/yes|available|completed|done|recorded/i)) trainingCompleted = true;
+    if (entry?.projectName) projectNames.add(String(entry.projectName));
+    if (entry?.venueName) venueNames.add(String(entry.venueName));
+    totalDetailEntries += parsePersonDetailStats(details).entries;
+  });
+
+  const statusChips = [
+    { label: phones.size ? "Phone Available" : "Phone Missing", ok: phones.size > 0 },
+    { label: emails.size ? "Email Available" : "Email Missing", ok: emails.size > 0 },
+    { label: govtIdAvailable ? "Govt ID Available" : "Govt ID Missing", ok: govtIdAvailable },
+    { label: declarationAvailable ? "Declaration Available" : "Declaration Missing", ok: declarationAvailable },
+    { label: Number(row?.totalBatches || 0) > 0 ? "Exam Duty Logged" : "Exam Duty Missing", ok: Number(row?.totalBatches || 0) > 0 },
+    { label: trainingCompleted || Number(row?.venueCoverage || 0) > 0 ? "PAT Training Recorded" : "PAT Training Missing", ok: trainingCompleted || Number(row?.venueCoverage || 0) > 0 },
   ];
-  const additionalItems = [
-    { label: "No Delay", value: formatCount(row?.noDelay || 0) },
-    { label: "Call Logs", value: formatCount(row?.callLogs || 0) },
-    { label: "Performance Score", value: Number(row?.score || 0).toFixed(2) },
-    { label: "Profile Status", value: "Active" },
+
+  const summaryRows = [
+    { label: "Phone", value: phones.size ? Array.from(phones).join(", ") : "-" },
+    { label: "Email", value: emails.size ? Array.from(emails).join(", ") : "-" },
+    { label: "Roles", value: roles.size ? Array.from(roles).join(", ") : "-" },
+    { label: "Tenure", value: tenures.size ? Array.from(tenures).join(", ") : "-" },
+  ];
+
+  const complianceRows = [
+    { label: "Exam Participation", value: Number(row?.totalBatches || 0) > 0 ? "Yes" : "No" },
+    { label: "Training Completed", value: trainingCompleted || Number(row?.venueCoverage || 0) > 0 ? "Yes" : "No" },
+    { label: "Exam Projects", value: formatCount(projectNames.size || 0) },
+    { label: "Training Projects", value: formatCount(venueNames.size || row?.venueCoverage || 0) },
+  ];
+
+  const rotationCards = [
+    { label: "Projects", value: formatCount(projectNames.size || 0) },
+    { label: "Drives", value: formatCount(row?.totalBatches || 0) },
+    { label: "Venues", value: formatCount(venueNames.size || row?.venueCoverage || 0) },
+    { label: "Records", value: formatCount(totalDetailEntries || row?.totalBatches || 0) },
   ];
 
   return (
     <div className="mp-manpower-profile-card">
-      <div className="mp-manpower-profile-left">
-        <div className="mp-manpower-photo-box" role="img" aria-label="Dummy grayscale photograph placeholder">
-          <div className="mp-manpower-photo-initials">{initials}</div>
-          <span>Dummy Grayscale Photo</span>
+      <div className="mp-manpower-profile-head">
+        <div className="mp-manpower-profile-identity">
+          <div className="mp-manpower-profile-avatar">{initials}</div>
+          <div>
+            <h4>{row?.personName || "Unknown"}</h4>
+            <p>ID: {row?.empId || "-"}</p>
+          </div>
         </div>
-        <div className="mp-manpower-doc-grid">
-          <div className="mp-manpower-doc mp-manpower-doc-horizontal">
-            <div className="mp-manpower-doc-title">Government ID Proof</div>
-            <div className="mp-manpower-doc-note">Upload Placeholder</div>
-          </div>
-          <div className="mp-manpower-doc mp-manpower-doc-vertical">
-            <div className="mp-manpower-doc-title">Employee ID Proof</div>
-            <div className="mp-manpower-doc-note">{row?.empId || "Pending"}</div>
-          </div>
+        <div className="mp-manpower-profile-head-actions">
+          <button type="button" className="mp-back-small-btn">Download</button>
+          <button type="button" className="mp-back-small-btn" onClick={onClose}>Close</button>
         </div>
       </div>
 
-      <div className="mp-manpower-profile-right">
+      <div className="mp-manpower-profile-body">
         <div className="mp-manpower-profile-section">
-          <h4>Summary</h4>
-          <div className="mp-manpower-profile-kv-grid">
-            {summaryItems.map((item) => (
-              <div key={item.label} className="mp-manpower-profile-kv">
+          <h5>Contact Information</h5>
+          <div className="mp-manpower-profile-main-grid">
+            <div className="mp-manpower-profile-left">
+              <div className="mp-manpower-photo-box" role="img" aria-label="Dummy grayscale photograph placeholder">
+                <div className="mp-manpower-photo-initials">{initials}</div>
+                <span>Dummy Grayscale Photo</span>
+              </div>
+              <div className="mp-manpower-doc-grid">
+                <div className="mp-manpower-doc mp-manpower-doc-horizontal">
+                  <div className="mp-manpower-doc-title">Government ID Proof</div>
+                  <div className="mp-manpower-doc-note">{govtIdAvailable ? "Verified" : "Upload Placeholder"}</div>
+                </div>
+                <div className="mp-manpower-doc mp-manpower-doc-vertical">
+                  <div className="mp-manpower-doc-title">Employee ID Proof</div>
+                  <div className="mp-manpower-doc-note">{row?.empId || "Pending"}</div>
+                </div>
+              </div>
+            </div>
+            <div className="mp-manpower-contact-list">
+              {summaryRows.map((item) => (
+                <div key={item.label} className="mp-manpower-contact-row">
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mp-manpower-profile-section">
+          <h5>Document Compliance</h5>
+          <div className="mp-manpower-status-grid">
+            {statusChips.map((chip) => (
+              <div key={chip.label} className={`mp-manpower-status-chip ${chip.ok ? "is-ok" : "is-miss"}`}>
+                <span className="mp-manpower-status-dot" />
+                <strong>{chip.label}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="mp-manpower-compliance-table">
+            {complianceRows.map((item) => (
+              <div key={item.label} className="mp-manpower-compliance-row">
                 <span>{item.label}</span>
                 <strong>{item.value}</strong>
               </div>
             ))}
           </div>
         </div>
+
         <div className="mp-manpower-profile-section">
-          <h4>Additional Details</h4>
-          <div className="mp-manpower-profile-kv-grid">
-            {additionalItems.map((item) => (
-              <div key={item.label} className="mp-manpower-profile-kv">
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
+          <div className="mp-manpower-rotation-head">
+            <h5>Rotation Summary</h5>
+            <span>Click a metric to view details</span>
+          </div>
+          <div className="mp-manpower-rotation-grid">
+            {rotationCards.map((card) => (
+              <div key={card.label} className="mp-manpower-rotation-card">
+                <strong>{card.value}</strong>
+                <span>{card.label}</span>
               </div>
             ))}
           </div>
@@ -1210,7 +1538,8 @@ function ManpowerProfileCard({ row }) {
 }
 
 export default function ManpowerDashboardPage() {
-  const { fetchApi, goTo, selectedVenueCode, setSelectedVenueCode, manpowerFilter, setManpowerFilter, openVenueDetail, user } = useApp();
+  const { fetchApi, goTo, selectedVenueCode, setSelectedVenueCode, manpowerFilter, setManpowerFilter, openVenueDetail, user, setSidebarCollapsed } = useApp();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [focusEmpId, setFocusEmpId] = useState("");
   const [focusPersonName, setFocusPersonName] = useState("");
@@ -1219,7 +1548,11 @@ export default function ManpowerDashboardPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [sidebarVenueFilters, setSidebarVenueFilters] = useState({
+    status: "",
+    category: "",
+    venueType: "",
+  });
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1245,6 +1578,53 @@ export default function ManpowerDashboardPage() {
   const [performanceView, setPerformanceView] = useState("manpower");
   const [performanceScope, setPerformanceScope] = useState("top10");
   const [performanceRankings, setPerformanceRankings] = useState(null);
+  const regionCategoryTableColRef = useRef(null);
+  const manpowerWiseTableColRef = useRef(null);
+  const [regionCategoryChartHeight, setRegionCategoryChartHeight] = useState(350);
+  const [manpowerWiseChartHeight, setManpowerWiseChartHeight] = useState(350);
+
+  useEffect(() => {
+    // Keep filter panel visible on manpower dashboard.
+    setSidebarCollapsed(false);
+  }, [setSidebarCollapsed]);
+
+  useLayoutEffect(() => {
+    const tableEl = regionCategoryTableColRef.current;
+    if (!tableEl) return undefined;
+    const syncHeight = () => {
+      const measured = tableEl.getBoundingClientRect().height || 0;
+      if (measured > 0) {
+        setRegionCategoryChartHeight((prev) => {
+          const next = Math.max(320, Math.round(measured));
+          return prev === next ? prev : next;
+        });
+      }
+    };
+    syncHeight();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(tableEl);
+    return () => observer.disconnect();
+  }, [selectedDrilldown, selectedManpowerDrilldown, result]);
+
+  useLayoutEffect(() => {
+    const tableEl = manpowerWiseTableColRef.current;
+    if (!tableEl) return undefined;
+    const syncHeight = () => {
+      const measured = tableEl.getBoundingClientRect().height || 0;
+      if (measured > 0) {
+        setManpowerWiseChartHeight((prev) => {
+          const next = Math.max(320, Math.round(measured));
+          return prev === next ? prev : next;
+        });
+      }
+    };
+    syncHeight();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(syncHeight);
+    observer.observe(tableEl);
+    return () => observer.disconnect();
+  }, [selectedDrilldown, selectedManpowerDrilldown, result]);
   const [performanceBusy, setPerformanceBusy] = useState(false);
   const [performanceError, setPerformanceError] = useState("");
   const [expandedProfilePersonKey, setExpandedProfilePersonKey] = useState("");
@@ -1394,6 +1774,9 @@ export default function ManpowerDashboardPage() {
         regions: filters.region ? [filters.region] : [],
         states: filters.state ? [filters.state] : [],
         examCityCentres: filters.examCityCentre ? [filters.examCityCentre] : [],
+        statuses: sidebarVenueFilters.status ? [sidebarVenueFilters.status] : [],
+        categories: sidebarVenueFilters.category ? [sidebarVenueFilters.category] : [],
+        venueTypes: sidebarVenueFilters.venueType ? [sidebarVenueFilters.venueType] : [],
         ...(dateMode === DATE_MODES.custom && dateFrom ? { dateFrom } : {}),
         ...(dateMode === DATE_MODES.custom && dateTo ? { dateTo } : {}),
       };
@@ -1431,7 +1814,7 @@ export default function ManpowerDashboardPage() {
     } finally {
       setBusy(false);
     }
-  }, [dateFrom, dateMode, dateTo, employeeTypes, fetchApi, filters, search, focusEmpId, focusPersonName]);
+  }, [dateFrom, dateMode, dateTo, employeeTypes, fetchApi, filters, sidebarVenueFilters, search, focusEmpId, focusPersonName]);
 
   useEffect(() => {
     const hasPersonSearch = (payload) =>
@@ -1792,6 +2175,26 @@ export default function ManpowerDashboardPage() {
   const manpowerWiseRows = useMemo(
     () => result?.manpowerWiseSummary || [],
     [result],
+  );
+  const tenureRoleSourceRows = useMemo(
+    () => result?.manpowerWiseTenureRoleDrilldown || [],
+    [result],
+  );
+  const regionVsRolesMatrix = useMemo(
+    () => buildRegionMatrixSummary(tenureRoleSourceRows, { bucketField: "role", maxBuckets: 8 }),
+    [tenureRoleSourceRows],
+  );
+  const regionVsTenureMatrix = useMemo(
+    () => buildRegionMatrixSummary(tenureRoleSourceRows, { bucketField: "tenure", maxBuckets: 7 }),
+    [tenureRoleSourceRows],
+  );
+  const outsourceVsTenureMatrix = useMemo(
+    () => buildRegionMatrixSummary(tenureRoleSourceRows, { bucketField: "tenure", workforceType: "outsource", maxBuckets: 7 }),
+    [tenureRoleSourceRows],
+  );
+  const ownedVsTenureMatrix = useMemo(
+    () => buildRegionMatrixSummary(tenureRoleSourceRows, { bucketField: "tenure", workforceType: "owned", maxBuckets: 7 }),
+    [tenureRoleSourceRows],
   );
   const manpowerSpreadRows = useMemo(() => {
     if (!selectedManpowerDrilldown) return [];
@@ -2620,7 +3023,85 @@ export default function ManpowerDashboardPage() {
     };
   }, [result, options, filters.region, filters.state]);
 
-  const updateFilter = (key, value) => {
+  const sidebarFilterOptions = useMemo(() => {
+    const venueRows = Array.isArray(result?.regionCategoryVenueDrilldown) ? result.regionCategoryVenueDrilldown : [];
+    const uniqueSorted = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "en", { sensitivity: "base" }));
+    return {
+      region: filteredOptions.regions || [],
+      state: filteredOptions.states || [],
+      examCityCentre: filteredOptions.examCityCentres || [],
+      projectName: filteredOptions.projects || [],
+      projectMonth: filteredOptions.projectMonths || [],
+      category: uniqueSorted(venueRows.map((row) => row.category)),
+      status: uniqueSorted(venueRows.map((row) => row.status)),
+      examWise: [],
+      roles: filteredOptions.roles || [],
+      documents: [],
+      venueType: uniqueSorted(venueRows.map((row) => row.venueType)),
+    };
+  }, [filteredOptions, result]);
+
+  const sidebarSelectedFilters = useMemo(() => ({
+    region: filters.region ? [filters.region] : [],
+    state: filters.state ? [filters.state] : [],
+    examCityCentre: filters.examCityCentre ? [filters.examCityCentre] : [],
+    projectName: filters.project ? [filters.project] : [],
+    projectMonth: [],
+    category: sidebarVenueFilters.category ? [sidebarVenueFilters.category] : [],
+    status: sidebarVenueFilters.status ? [sidebarVenueFilters.status] : [],
+    examWise: [],
+    roles: filters.role ? [filters.role] : [],
+    documents: [],
+    venueType: sidebarVenueFilters.venueType ? [sidebarVenueFilters.venueType] : [],
+  }), [filters, sidebarVenueFilters]);
+
+  const handleSidebarToggleFilter = useCallback((key, value) => {
+    if (key === "region") {
+      updateFilter("region", filters.region === value ? "" : value);
+      return;
+    }
+    if (key === "state") {
+      updateFilter("state", filters.state === value ? "" : value);
+      return;
+    }
+    if (key === "examCityCentre") {
+      updateFilter("examCityCentre", filters.examCityCentre === value ? "" : value);
+      return;
+    }
+    if (key === "projectName") {
+      updateFilter("project", filters.project === value ? "" : value);
+      return;
+    }
+    if (key === "roles") {
+      updateFilter("role", filters.role === value ? "" : value);
+      return;
+    }
+    if (key === "status" || key === "category" || key === "venueType") {
+      setSidebarVenueFilters((prev) => ({
+        ...prev,
+        [key]: prev[key] === value ? "" : value,
+      }));
+      setTimeout(() => runQuery(), 0);
+    }
+  }, [filters, updateFilter, runQuery]);
+
+  const handleSidebarSelectAll = useCallback((key) => {
+    if (key === "region") updateFilter("region", "");
+    if (key === "state") updateFilter("state", "");
+    if (key === "examCityCentre") updateFilter("examCityCentre", "");
+    if (key === "projectName") updateFilter("project", "");
+    if (key === "roles") updateFilter("role", "");
+    if (key === "status" || key === "category" || key === "venueType") {
+      setSidebarVenueFilters((prev) => ({ ...prev, [key]: "" }));
+      setTimeout(() => runQuery(), 0);
+    }
+  }, [updateFilter, runQuery]);
+
+  const handleSidebarClearAll = useCallback((key) => {
+    handleSidebarSelectAll(key);
+  }, [handleSidebarSelectAll]);
+
+  function updateFilter(key, value) {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
       if (key === "region") {
@@ -2636,13 +3117,7 @@ export default function ManpowerDashboardPage() {
     if (key === "region" || key === "state" || key === "examCityCentre") {
        setTimeout(() => runQuery(), 0);
     }
-  };
-
-  const handleToggleEmployeeType = (type) => {
-    setEmployeeTypes((prev) =>
-      prev.includes(type) ? prev.filter((entry) => entry !== type) : [...prev, type],
-    );
-  };
+  }
 
   const handleResetFilters = () => {
     setSearch("");
@@ -2653,6 +3128,7 @@ export default function ManpowerDashboardPage() {
     setDateFrom("");
     setDateTo("");
     setFilters({ ...DEFAULT_FILTERS });
+    setSidebarVenueFilters({ status: "", category: "", venueType: "" });
     setSelectedDrilldown(null);
     setSelectedManpowerDrilldown(null);
     setStateCompareOpen(false);
@@ -2680,6 +3156,9 @@ export default function ManpowerDashboardPage() {
       regions: [],
       states: [],
       examCityCentres: [],
+      statuses: [],
+      categories: [],
+      venueTypes: [],
     });
   };
 
@@ -2711,20 +3190,81 @@ export default function ManpowerDashboardPage() {
   }
 
   return (
+    <div className="app-shell">
+      <Sidebar
+        filterOptions={sidebarFilterOptions}
+        selectedFilters={sidebarSelectedFilters}
+        onToggleFilter={handleSidebarToggleFilter}
+        onSelectAll={handleSidebarSelectAll}
+        onClearAll={handleSidebarClearAll}
+        onResetAll={handleResetFilters}
+        globalSearchConfig={{
+          placeholder: "Search manpower by name or ID and press Search",
+          onSearch: (query) => {
+            const normalized = String(query || "").trim();
+            setSearch(normalized);
+            setFocusEmpId("");
+            setFocusPersonName("");
+            runQuery({
+              search: normalized,
+              focusEmpId: "",
+              personName: "",
+              employeeTypes,
+              projects: filters.project ? [filters.project] : [],
+              employees: filters.employee ? [filters.employee] : [],
+              tenure: filters.tenure ? [filters.tenure] : [],
+              roles: filters.role ? [filters.role] : [],
+              regions: filters.region ? [filters.region] : [],
+              states: filters.state ? [filters.state] : [],
+              examCityCentres: filters.examCityCentre ? [filters.examCityCentre] : [],
+              statuses: sidebarVenueFilters.status ? [sidebarVenueFilters.status] : [],
+              categories: sidebarVenueFilters.category ? [sidebarVenueFilters.category] : [],
+              venueTypes: sidebarVenueFilters.venueType ? [sidebarVenueFilters.venueType] : [],
+              dateFrom: dateMode === DATE_MODES.custom ? dateFrom : "",
+              dateTo: dateMode === DATE_MODES.custom ? dateTo : "",
+            });
+          },
+          resolve: () => [],
+        }}
+        mobileOpen={mobileSidebarOpen}
+        onToggleMobile={() => setMobileSidebarOpen((prev) => !prev)}
+      />
+
+      <button
+        className={`sidebar-backdrop ${mobileSidebarOpen ? "visible" : ""}`}
+        onClick={() => setMobileSidebarOpen(false)}
+        aria-label="Close sidebar"
+      />
+
+      <main className="main-content">
+        <button
+          className="mobile-sidebar-toggle"
+          onClick={() => setMobileSidebarOpen(true)}
+          aria-label="Open sidebar"
+        >
+          <ChevronsRight size={20} />
+        </button>
+
     <div className="mp-page">
+      <div className="dashboard-top-shell mp-dashboard-top-shell">
       <div className="mp-header">
-        <div>
+        <div className="mp-header-left">
           <h1 className="mp-title">Manpower Dashboard</h1>
         </div>
-        <div className="mp-header-actions">
-          {returnToGlobalSearchQuery ? (
-            <button className="mp-back-small-btn is-active" onClick={handleBackToSearchResults}>
-              Back to Search Results
+        <div className="mp-header-right">
+          <div className="dash-logo mp-dash-logo">
+            <img src="/logo.png" alt="DEXIT Global" className="dash-logo-img mp-logo-img" />
+          </div>
+          <div className="mp-header-actions">
+            {returnToGlobalSearchQuery ? (
+              <button className="mp-back-small-btn is-active" onClick={handleBackToSearchResults}>
+                Back to Search Results
+              </button>
+            ) : null}
+            <button className="mp-back-btn" onClick={() => goTo("dashboard")}>
+              Back to Dashboard
             </button>
-          ) : null}
-          <button className="mp-back-btn" onClick={() => goTo("dashboard")}>
-            Back to Dashboard
-          </button>
+          </div>
         </div>
       </div>
 
@@ -2733,17 +3273,11 @@ export default function ManpowerDashboardPage() {
 
         <div className="mp-kpi-grid">
           {kpiCards.map((card) => {
-            const val = card.value;
-            const isCritical = card.key === "fullBatchDelay" || card.key === "callLogs";
-            const isWarning = card.key === "partialBatchDelay" || card.key === "ffa";
-            const severityClass = isCritical && val > 0 ? " kpi-severity-critical" : isWarning && val > 0 ? " kpi-severity-warning" : "";
-            const severityIcon = isCritical && val > 0 ? "🔴" : isWarning && val > 0 ? "🟡" : "";
-            
             return (
               <div 
                 key={card.key} 
                 data-tooltip="Click to drill down"
-                className={`mp-kpi-card mp-kpi-clickable${drilldownPath.metric === card.key ? ' active' : ''}${severityClass}`} 
+                className={`mp-kpi-card mp-kpi-clickable${drilldownPath.metric === card.key ? ' active' : ''}`} 
                 style={{ "--card-color": card.color }}
                 onClick={() => {
                   if (drilldownPath.metric === card.key) resetDrilldown();
@@ -2753,157 +3287,18 @@ export default function ManpowerDashboardPage() {
                   }
                 }}
               >
-                <div className="mp-kpi-title">{severityIcon ? <span className="kpi-severity-icon">{severityIcon}</span> : null}{card.title}</div>
+                <div className="mp-kpi-title">
+                  {card.title}
+                </div>
                 <div className="mp-kpi-value">{formatCount(card.value)}</div>
-                <div className="mp-kpi-hint">{drilldownPath.metric === card.key ? "Hide details" : "Drill down"}</div>
               </div>
             );
           })}
         </div>
       </section>
-
-
-
-      <div className="mp-filter-card mp-filter-card--compact">
-        <div className="mp-filter-header">
-          <h3>Dashboard Filters</h3>
-          <div className="mp-filter-actions">
-            <button className="mp-action-btn" onClick={handleResetFilters}>Reset All</button>
-            <button className="mp-action-btn mp-action-btn-primary" onClick={() => runQuery()}>Apply Filters</button>
-          </div>
-        </div>
-
-        <div className="mp-filter-body">
-          <div className="mp-top-grid mp-top-grid--compact-3">
-            <div className="mp-field">
-              <label>Search</label>
-              <input
-                className="mp-input"
-                placeholder="Search by name, ID, or phone..."
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setFocusEmpId("");
-                  setFocusPersonName("");
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    runQuery();
-                  }
-                }}
-              />
-            </div>
-
-            <div className="mp-field">
-              <label>Employee Type</label>
-              <div className="mp-segment">
-                {EMPLOYEE_TYPES.map((type) => {
-                  const active = employeeTypes.includes(type);
-                  return (
-                    <button
-                      key={type}
-                      className={`mp-segment-btn ${active ? "active" : ""}`}
-                      onClick={() => handleToggleEmployeeType(type)}
-                    >
-                      {type}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mp-field">
-              <label>Date Filter</label>
-              <div className="mp-segment">
-                <button
-                  className={`mp-segment-btn ${dateMode === DATE_MODES.all ? "active" : ""}`}
-                  onClick={() => setDateMode(DATE_MODES.all)}
-                >
-                  All Data
-                </button>
-                <button
-                  className={`mp-segment-btn ${dateMode === DATE_MODES.custom ? "active" : ""}`}
-                  onClick={() => setDateMode(DATE_MODES.custom)}
-                >
-                  Custom Range
-                </button>
-              </div>
-              {dateMode === DATE_MODES.custom ? (
-                <div className="mp-date-row">
-                  <input type="date" className="mp-input" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-                  <input type="date" className="mp-input" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="mp-advanced-section">
-            <button className="mp-advanced-toggle" onClick={() => setAdvancedOpen((prev) => !prev)}>
-              {advancedOpen ? "Hide Advanced Filters ▲" : "Show Advanced Filters ▼"}
-            </button>
-
-            {advancedOpen ? (
-              <div className="mp-advanced-body">
-                <div className="mp-select-grid mp-select-grid-6 mp-select-grid--compact-4">
-                  <SelectField
-                    label="Project Name"
-                    value={filters.project}
-                    onChange={(value) => updateFilter("project", value)}
-                    options={filteredOptions.projects || []}
-                    placeholder="All Projects"
-                  />
-                  <SelectField
-                    label="Employee (ID - Name)"
-                    value={filters.employee}
-                    onChange={(value) => updateFilter("employee", value)}
-                    options={filteredOptions.employees || []}
-                    placeholder="All Employees"
-                  />
-                  <SelectField
-                    label="Tenure"
-                    value={filters.tenure}
-                    onChange={(value) => updateFilter("tenure", value)}
-                    options={filteredOptions.tenure || []}
-                    placeholder="All Tenures"
-                  />
-                  <SelectField
-                    label="Role"
-                    value={filters.role}
-                    onChange={(value) => updateFilter("role", value)}
-                    options={filteredOptions.roles || []}
-                    placeholder="All Roles"
-                  />
-                </div>
-
-                <div className="mp-select-grid mp-select-grid-4 mp-select-grid--compact-3" style={{ marginTop: "10px" }}>
-                  <SelectField
-                    label="Region"
-                    value={filters.region}
-                    onChange={(value) => updateFilter("region", value)}
-                    options={filteredOptions.regions || []}
-                    placeholder="All Regions"
-                  />
-                  <SelectField
-                    label="State"
-                    value={filters.state}
-                    onChange={(value) => updateFilter("state", value)}
-                    options={filteredOptions.states || []}
-                    placeholder="All States"
-                  />
-                  <SelectField
-                    label="Exam City"
-                    value={filters.examCityCentre}
-                    onChange={(value) => updateFilter("examCityCentre", value)}
-                    options={filteredOptions.examCityCentres || []}
-                    placeholder="All Cities"
-                  />
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
       </div>
+
+
 
       {error ? <div className="inline-error">{error}</div> : null}
       {busy ? <div className="mp-busy">Updating dashboard...</div> : null}
@@ -2912,7 +3307,7 @@ export default function ManpowerDashboardPage() {
         <section className="mp-performance-section">
           <div className="mp-performance-head">
             <h3 className="section-title">
-              Performance Rankings (Top to Bottom)
+              Performance Analytics
               {performanceRankings?.scope === "top10" ? " - Top 10" : ""}
               {performanceRankings?.scope === "top25" ? " - Top 25" : ""}
               {performanceRankings?.scope === "full" ? " - Full List" : ""}
@@ -3008,7 +3403,11 @@ export default function ManpowerDashboardPage() {
                           {isExpanded ? (
                             <tr className="mp-profile-row">
                               <td colSpan={7}>
-                                <ManpowerProfileCard row={row} />
+                                <ManpowerProfileCard
+                                  row={row}
+                                  sourceRows={result?.manpowerWiseEmployeeRotationDrilldown || []}
+                                  onClose={() => setExpandedProfilePersonKey("")}
+                                />
                               </td>
                             </tr>
                           ) : null}
@@ -3663,11 +4062,35 @@ export default function ManpowerDashboardPage() {
         </>
       ) : (
         <>
+          {!selectedManpowerDrilldown ? (
+            <>
+              <RegionMatrixSection
+                title="Region vs Roles"
+                rows={regionVsRolesMatrix.rows}
+                buckets={regionVsRolesMatrix.buckets}
+              />
+              <RegionMatrixSection
+                title="Region vs Tenure"
+                rows={regionVsTenureMatrix.rows}
+                buckets={regionVsTenureMatrix.buckets}
+              />
+              <RegionMatrixSection
+                title="Outsource Manpower vs Tenure"
+                rows={outsourceVsTenureMatrix.rows}
+                buckets={outsourceVsTenureMatrix.buckets}
+              />
+              <RegionMatrixSection
+                title="Owned Manpower vs Tenure"
+                rows={ownedVsTenureMatrix.rows}
+                buckets={ownedVsTenureMatrix.buckets}
+              />
+            </>
+          ) : null}
           <h3 className="section-title">Region vs Category Manpower Details</h3>
           <div className="flex-table-row">
             <div className="half-col">
-              <div className="chart-container" style={{ height: "100%", minHeight: "350px", width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
-                <ResponsiveContainer width="100%" height={330}>
+              <div className="chart-container" style={{ height: `${regionCategoryChartHeight}px`, minHeight: `${regionCategoryChartHeight}px`, width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
+                <ResponsiveContainer width="100%" height={Math.max(250, regionCategoryChartHeight - 32)}>
                   <BarChart 
                     data={regionCategoryChartRows} 
                     barSize={26}
@@ -3735,7 +4158,7 @@ export default function ManpowerDashboardPage() {
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="half-col">
+            <div className="half-col" ref={regionCategoryTableColRef}>
               <RegionCategoryTable
                 rows={regionCategoryRows}
                 onCellClick={(region, category) =>
@@ -4001,8 +4424,8 @@ export default function ManpowerDashboardPage() {
               <h3 className="section-title">Manpower-Wise Details</h3>
               <div className="flex-table-row">
                 <div className="half-col">
-                  <div className="chart-container" style={{ height: "100%", minHeight: "350px", width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
-                    <ResponsiveContainer width="100%" height={330}>
+                  <div className="chart-container" style={{ height: `${manpowerWiseChartHeight}px`, minHeight: `${manpowerWiseChartHeight}px`, width: "100%", background: "#fff", border: "1px solid #dde6ef", borderRadius: "12px", padding: "16px" }}>
+                    <ResponsiveContainer width="100%" height={Math.max(250, manpowerWiseChartHeight - 32)}>
                       <BarChart 
                         data={manpowerWiseRows} 
                         barSize={20}
@@ -4043,7 +4466,7 @@ export default function ManpowerDashboardPage() {
                     </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="half-col">
+                <div className="half-col" ref={manpowerWiseTableColRef}>
                   <ManpowerWiseTable
                     rows={manpowerWiseRows}
                     onCellClick={(region, workforceType) =>
@@ -4070,6 +4493,8 @@ export default function ManpowerDashboardPage() {
           )}
         </>
       )}
+    </div>
+      </main>
     </div>
   );
 }

@@ -176,6 +176,24 @@ export default function MasterVenueCoverageMapPage() {
     };
   }, [rows, selectedState, selectedDistrict]);
 
+  const districtVenueRows = useMemo(() => {
+    if (!selectedState || !selectedDistrict) return [];
+    return rows
+      .filter(
+        (r) =>
+          toTitleCase(r.state) === selectedState &&
+          toTitleCase(r.district) === selectedDistrict
+      )
+      .map((r, idx) => ({
+        id: `${idx}-${String(r.dmsCode || "").trim()}`,
+        venueName: String(r.venueName || r.venue_name || r.name || r.dmsCode || "Venue").trim(),
+        dmsCode: String(r.dmsCode || "").trim(),
+        venueType: String(r.venueType || "").trim(),
+        venueMaxCapacity: Number(r.venueMaxCapacity) || 0,
+        city: String(r.city || "").trim(),
+      }));
+  }, [rows, selectedState, selectedDistrict]);
+
   const handleStateSelect = (e) => {
     setSelectedState(e.target.value);
     setSelectedDistrict("");
@@ -286,14 +304,14 @@ export default function MasterVenueCoverageMapPage() {
                     </table>
                   </div>
 
-                  <div className="state-map-container" style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px", background: "#f8fafc", marginBottom: "24px" }}>
+                  <div id="state-map-section" className="state-map-container" style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px", background: "#f8fafc", marginBottom: "24px" }}>
                     <StateMap 
                       stateName={selectedState} 
                       data={districtCountsForState} 
                       onDistrictClick={(dist) => {
                         setSelectedDistrict(dist);
                         setTimeout(() => {
-                          document.getElementById("district-overview-section")?.scrollIntoView({ behavior: "smooth" });
+                          document.getElementById("state-map-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
                         }, 100);
                       }}
                     />
@@ -315,6 +333,14 @@ export default function MasterVenueCoverageMapPage() {
 
                   {districtOverview && (
                     <>
+                      <div className="state-map-container" style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "16px", background: "#f8fafc", marginBottom: "16px" }}>
+                        <StateMap
+                          stateName={selectedState}
+                          data={districtCountsForState}
+                          focusedDistrict={selectedDistrict}
+                          focusedVenueRows={districtVenueRows}
+                        />
+                      </div>
                       <h3 className="section-title" style={{ textTransform: "uppercase" }}>{selectedDistrict} OVERVIEW</h3>
                       <div className="table-wrap">
                         <table className="data-table">

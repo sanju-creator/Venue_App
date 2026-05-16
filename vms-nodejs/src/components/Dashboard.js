@@ -53,6 +53,17 @@ const CATEGORY_CHIP_STYLES = {
   "BL-C": { bg: "#f8effd", border: "#ddb6ef", text: "#704285", dot: "#b06ed1" },
 };
 
+const UNION_TERRITORY_NAMES = new Set([
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry",
+]);
+
 const STATUS_COLORS = {
   ACTIVE: "#79c6e6",
   BLACKLISTED: "#f5a6a6",
@@ -60,8 +71,13 @@ const STATUS_COLORS = {
 };
 
 const OPERATIONAL_COLORS = {
-  DATC: "#2f6fdd",
-  DOTC: "#60a5fa",
+  DATC: "#7eaedc",
+  DOTC: "#87cbbf",
+};
+
+const OPERATIONAL_STROKES = {
+  DATC: "#5f8fbe",
+  DOTC: "#5fa79c",
 };
 
 const STATUS_CHART_KEY_TO_STATUS = {
@@ -79,11 +95,11 @@ const CATEGORY_CHART_KEY_TO_CATEGORY = {
 };
 
 const CATEGORY_MEANINGS = {
-  A: "Good venue",
-  B: "Average venue ",
-  C: "Sensitive venue",
-  BL: "Blacklisted venue",
-  "BL-C": "Customer-specific blacklisted venue",
+  A: "Good venue: clean and issue-free with positive survey",
+  B: "Average venue: moderate issues with low FFA (<10)",
+  C: "Sensitive venue: FFA >=10 or malpractice risk",
+  BL: "Blacklisted venue: confirmed customer block",
+  "BL-C": "Customer-specific blacklist for selected projects",
 };
 
 const CATEGORY_LABEL_FLOAT_OFFSETS = {
@@ -355,8 +371,6 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
   const [manpowerSnapshot, setManpowerSnapshot] = useState(null);
-  const [manpowerSnapshotBusy, setManpowerSnapshotBusy] = useState(false);
-  const [manpowerSnapshotError, setManpowerSnapshotError] = useState("");
 
   const [selectedFilters, setSelectedFilters] = useState(null);
   const [topFilters, setTopFilters] = useState({
@@ -366,13 +380,24 @@ export default function Dashboard() {
   });
 
   const [searchInput, setSearchInput] = useState("");
+  const [isVenueSearchOpen, setIsVenueSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [manpowerQuickSearch, setManpowerQuickSearch] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activePerspective, setActivePerspective] = useState("venue");
   const venuePerspectiveRef = useRef(null);
   const venueSearchRef = useRef(null);
-  const manpowerPerspectiveRef = useRef(null);
+  const venueSearchInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isVenueSearchOpen) return;
+    const onPointerDown = (event) => {
+      if (!venueSearchRef.current?.contains(event.target) && !searchInput.trim()) {
+        setIsVenueSearchOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isVenueSearchOpen, searchInput]);
 
   const persistPendingManpowerFilter = useCallback((payload) => {
     if (typeof window === "undefined") return;
@@ -430,22 +455,16 @@ export default function Dashboard() {
   );
 
   const switchPerspective = useCallback((nextPerspective) => {
-    setActivePerspective(nextPerspective);
-    const target = nextPerspective === "manpower" ? manpowerPerspectiveRef.current : venuePerspectiveRef.current;
+    if (nextPerspective === "manpower") {
+      goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
+      return;
+    }
+    setActivePerspective("venue");
+    const target = venuePerspectiveRef.current;
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, []);
-
-  const handleManpowerQuickSearch = useCallback(() => {
-    const query = String(manpowerQuickSearch || "").trim();
-    if (!query) return;
-    const payload = { search: query };
-    setSelectedVenueCode("");
-    setManpowerFilter(payload);
-    persistPendingManpowerFilter(payload);
-    goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS });
-  }, [goTo, manpowerQuickSearch, persistPendingManpowerFilter, setManpowerFilter, setSelectedVenueCode]);
+  }, [goTo]);
 
 
   useEffect(() => {
@@ -512,16 +531,12 @@ export default function Dashboard() {
     let active = true;
     if (!canViewUnifiedManpower) {
       setManpowerSnapshot(null);
-      setManpowerSnapshotBusy(false);
-      setManpowerSnapshotError("");
       return () => {
         active = false;
       };
     }
     const loadManpowerSnapshot = async () => {
       if (!active) return;
-      setManpowerSnapshotBusy(true);
-      setManpowerSnapshotError("");
       try {
         const data = await fetchApi("manpower/query", {
           method: "POST",
@@ -543,9 +558,6 @@ export default function Dashboard() {
       } catch (err) {
         if (!active) return;
         setManpowerSnapshot(null);
-        setManpowerSnapshotError(err.message || "Could not load manpower snapshot");
-      } finally {
-        if (active) setManpowerSnapshotBusy(false);
       }
     };
     loadManpowerSnapshot();
@@ -649,20 +661,6 @@ export default function Dashboard() {
       inactiveSeatCapacity: sumBy(inactiveRows, (row) => row.venueMaxCapacity),
     };
   }, [filteredRows, inactiveRows]);
-
-  const manpowerSnapshotOverview = useMemo(() => {
-    const overview = manpowerSnapshot?.overview || {};
-    return {
-      manpower: Number(overview.manpower || 0),
-      projects: Number(overview.projects || 0),
-      drives: Number(overview.drives || 0),
-      venueCount: Number(overview.venueCount || 0),
-      totalBatches: Number(overview.totalBatches || 0),
-      noBatchDelay: Number(overview.noBatchDelay || 0),
-      callLogs: Number(overview.callLogs || 0),
-      ffa: Number(overview.ffa || 0),
-    };
-  }, [manpowerSnapshot]);
 
   const manpowerSnapshotProjectRows = useMemo(() => {
     const rows = Array.isArray(manpowerSnapshot?.projectSummary) ? manpowerSnapshot.projectSummary : [];
@@ -854,36 +852,6 @@ export default function Dashboard() {
     };
   }, [regionSummaries]);
 
-  const categoryExecutiveInsights = useMemo(() => {
-    const total = Number(categoryTotals.grand || 0);
-    if (!total) return [];
-
-    const countsByCategory = {
-      A: Number(categoryTotals.A || 0),
-      B: Number(categoryTotals.B || 0),
-      C: Number(categoryTotals.C || 0),
-      "BL-C": Number(categoryTotals.BLC || 0),
-      BL: Number(categoryTotals.BL || 0),
-    };
-
-    const dominant = Object.entries(countsByCategory).sort((left, right) => right[1] - left[1])[0];
-    const dominantCategory = dominant?.[0] || "A";
-    const dominantCount = Number(dominant?.[1] || 0);
-    const dominantShare = percent(dominantCount, total);
-
-    const qualityCount = countsByCategory.A + countsByCategory.B;
-    const qualityShare = percent(qualityCount, total);
-    const riskCount = countsByCategory["BL-C"] + countsByCategory.BL;
-    const riskShare = percent(riskCount, total);
-    const cShare = percent(countsByCategory.C, total);
-
-    return [
-      `Dominant: ${dominantCategory} (${dominantShare}%, ${formatCount(dominantCount)} venues).`,
-      `Ready pool (A+B): ${qualityShare}% | Watchlist (BL+BL-C): ${riskShare}%.`,
-      `Upgrade bucket (C): ${cShare}% (${formatCount(countsByCategory.C)} venues).`,
-    ];
-  }, [categoryTotals]);
-
   const distributionTotals = useMemo(() => {
     return {
       datcCount: sumBy(regionSummaries, (item) => item.datcCount),
@@ -1032,21 +1000,13 @@ export default function Dashboard() {
         onSelect: entry.onSelect,
       }));
 
-    const venueMatches = buildVenueSearchResults(rows, query, { includeLocation: false, limit: 8 })
+    const venueMatches = buildVenueSearchResults(rows, query, { includeLocation: true, limit: 0 })
       .map((entry) => entry.row)
       .map((row) => ({
         id: `venue-${row.dmsCode}`,
         title: `${row.name || "Unnamed Venue"} (${row.dmsCode})`,
         subtitle: `${row.city || "-"}, ${row.state || "-"} | ${row.venueType || "-"} | ${row.status || "-"}`,
-        onSelect: () => {
-          const venueToken = String(row.name || row.dmsCode || "").trim();
-          setSearchInput(venueToken);
-          setSearchQuery(venueToken);
-          switchPerspective("venue");
-          requestAnimationFrame(() => {
-            venueSearchRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          });
-        },
+        onSelect: () => openVenueDetail(row.dmsCode),
       }));
 
     const regionMatches = uniqueSorted(rows.map((row) => row.region))
@@ -1077,45 +1037,6 @@ export default function Dashboard() {
         },
       }));
 
-    const districtMatches = uniqueSorted(rows.map((row) => row.district))
-      .filter((district) => district.toLowerCase().includes(query))
-      .slice(0, 5)
-      .map((district) => ({
-        id: `district-${district}`,
-        title: `District Focus: ${district}`,
-        subtitle: "Filter venue search to this district",
-        onSelect: () => {
-          setSearchInput(district);
-          setSearchQuery(district.toLowerCase());
-        },
-      }));
-
-    const cityMatches = uniqueSorted(rows.map((row) => row.city))
-      .filter((city) => city.toLowerCase().includes(query))
-      .slice(0, 5)
-      .map((city) => ({
-        id: `city-${city}`,
-        title: `City Focus: ${city}`,
-        subtitle: "Filter venue search to this city",
-        onSelect: () => {
-          setSearchInput(city);
-          setSearchQuery(city.toLowerCase());
-        },
-      }));
-
-    const examCityMatches = uniqueSorted(rows.map((row) => buildExamCityCentre(row)))
-      .filter((centre) => centre.toLowerCase().includes(query))
-      .slice(0, 5)
-      .map((centre) => ({
-        id: `exam-centre-${centre}`,
-        title: `Exam City Centre: ${centre}`,
-        subtitle: "Apply top filter to this exam city centre",
-        onSelect: () => {
-          setTopFilters((prev) => ({ ...prev, examCityCentre: centre }));
-          setSearchInput("");
-          setSearchQuery("");
-        },
-      }));
 
     const statusMatches = STATUS_ORDER
       .filter((status) => status.toLowerCase().includes(query))
@@ -1208,9 +1129,6 @@ export default function Dashboard() {
       ...manpowerProjectMatches,
       ...regionMatches,
       ...stateMatches,
-      ...districtMatches,
-      ...cityMatches,
-      ...examCityMatches,
       ...statusMatches,
       ...categoryMatches,
     ];
@@ -1222,8 +1140,8 @@ export default function Dashboard() {
       seen.add(entry.id);
       deduped.push(entry);
     });
-    return deduped.slice(0, 18);
-  }, [globalModuleEntries, globalPersonDirectory, goTo, manpowerSnapshotProjectRows, persistPendingManpowerFilter, rows, setManpowerFilter, setSelectedVenueCode, switchPerspective]);
+    return deduped;
+  }, [globalModuleEntries, globalPersonDirectory, goTo, manpowerSnapshotProjectRows, openVenueDetail, persistPendingManpowerFilter, rows, setManpowerFilter, setSelectedVenueCode]);
 
   const renderClickable = (val, onClick) => (
     <span className="clickable-cell" onClick={onClick}>
@@ -1380,6 +1298,7 @@ export default function Dashboard() {
 
   const mapCapacitySummary = useMemo(() => {
     if (!filteredRows.length) return null;
+    const activeSearchLabel = String(searchQuery || "").trim();
     const uniqueStates = new Set();
     const uniqueDistricts = new Set();
     const uniqueCities = new Set();
@@ -1393,7 +1312,10 @@ export default function Dashboard() {
     let scopeLabel = "States";
     let getGroupName = (row) => row.state || "Unknown";
 
-    if (uniqueCities.size === 1) {
+    if (activeSearchLabel) {
+      scopeLabel = "Venues";
+      getGroupName = (row) => row.name || row.dmsCode || "Unknown Venue";
+    } else if (uniqueCities.size === 1) {
       scopeLabel = "Venues";
       getGroupName = (row) => row.name || row.dmsCode || "Unknown Venue";
     } else if (uniqueDistricts.size === 1) {
@@ -1407,9 +1329,11 @@ export default function Dashboard() {
     const groups = new Map();
     filteredRows.forEach((row) => {
       const groupName = getGroupName(row);
-      if (!groups.has(groupName)) groups.set(groupName, { capacity: 0 });
+      if (scopeLabel === "States" && UNION_TERRITORY_NAMES.has(groupName)) return;
+      if (!groups.has(groupName)) groups.set(groupName, { capacity: 0, venueCount: 0 });
       const entry = groups.get(groupName);
       entry.capacity += toNumber(row.venueMaxCapacity);
+      entry.venueCount += 1;
     });
 
     const sorted = Array.from(groups.entries())
@@ -1421,13 +1345,16 @@ export default function Dashboard() {
 
     return {
       scopeLabel,
+      contextLabel: activeSearchLabel ? activeSearchLabel.toUpperCase() : "",
       totalGroups: sorted.length,
       maxName: sorted[0][0],
       maxCapacity: sorted[0][1].capacity,
+      maxVenueCount: sorted[0][1].venueCount,
       minName: sorted[sorted.length - 1][0],
-      minCapacity: sorted[sorted.length - 1][1].capacity
+      minCapacity: sorted[sorted.length - 1][1].capacity,
+      minVenueCount: sorted[sorted.length - 1][1].venueCount,
     };
-  }, [filteredRows]);
+  }, [filteredRows, searchQuery]);
 
   if (busy) {
     return (
@@ -1462,6 +1389,12 @@ export default function Dashboard() {
         globalSearchConfig={{
           placeholder: "Type name or code and press Search",
           resolve: resolveGlobalSearchResults,
+          onSearch: (query) => {
+            const cleaned = String(query || "").trim();
+            setSearchInput(cleaned);
+            setSearchQuery(cleaned.toLowerCase());
+          },
+          autoOpenModal: false,
         }}
         mobileOpen={mobileSidebarOpen}
         onToggleMobile={() => setMobileSidebarOpen((prev) => !prev)}
@@ -1485,8 +1418,7 @@ export default function Dashboard() {
         <div className="dashboard-top-shell">
           <div className="dash-header">
             <div className="dash-title-block">
-              <h1 className="dash-title">Venue Analysis Dashboard</h1>
-              <p className="dash-subtitle">Live venue intelligence with drilldown analytics</p>
+              <h1 className="dash-title">Venue & Manpower Intelligence</h1>
               <div className="perspective-switch" role="tablist" aria-label="Dashboard perspective switch">
                 <button
                   type="button"
@@ -1495,7 +1427,7 @@ export default function Dashboard() {
                   className={`perspective-btn ${activePerspective === "venue" ? "active" : ""}`}
                   onClick={() => switchPerspective("venue")}
                 >
-                  Venue Perspective
+                  Venue Dashboard
                 </button>
                 {canViewUnifiedManpower ? (
                   <button
@@ -1505,7 +1437,7 @@ export default function Dashboard() {
                     className={`perspective-btn ${activePerspective === "manpower" ? "active" : ""}`}
                     onClick={() => switchPerspective("manpower")}
                   >
-                    Manpower Perspective
+                    Manpower Dashboard
                   </button>
                 ) : null}
 
@@ -1544,67 +1476,21 @@ export default function Dashboard() {
                     {card.title}
                   </div>
                   <div className="kpi-val">{formatCount(val)}</div>
-                  <div className="kpi-click-hint">{drilldownPath.key === card.key ? "Hide details" : "Drill down"}</div>
                 </button>
               );
             })}
           </div>
 
-          <div className="search-card dashboard-venue-search" ref={venueSearchRef}>
-            <div className="search-title">Venue Search</div>
-            <div className="search-flex">
-              <input
-                className="search-input"
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") handleSearch();
-                }}
-                placeholder="e.g. AP COMPUTER POINT or EST-AR-1161 or ITANAGAR..."
-              />
-              <button className="search-btn" onClick={handleSearch}>Search Venue</button>
-            </div>
-            {searchInput.trim() ? (
-              <div className="search-result-list dashboard-venue-search-results">
-                {venueSearchResults.length ? (
-                  venueSearchResults.map((row) => (
-                    <div
-                      className="search-result-row search-result-row-clickable"
-                      key={`venue-result-${row.dmsCode}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => openVenueDetail(row.dmsCode)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          openVenueDetail(row.dmsCode);
-                        }
-                      }}
-                    >
-                      <div>
-                        <div className="result-main">{row.name || "-"}</div>
-                        <div className="result-sub">
-                          {row.dmsCode} | {row.city || "-"}, {row.state || "-"} | {row.status || "-"}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="search-empty">No venue matches found.</div>
-                )}
-              </div>
-            ) : null}
-          </div>
         </div>
 
-        
+
 
         <div className="chart-row-3">
           <div className="chart-col">
             <h3>
               Category Distribution
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-                (Interactive: Click any segment to drill down)
+                (Click any segment to drill down)
               </span>
             </h3>
             <div className="chart-container chart-container--category">
@@ -1645,40 +1531,30 @@ export default function Dashboard() {
             </div>
             <div className="category-meaning-compact">
               {PIE_ORDER.filter((category) => categoryPieData.some((item) => item.name === category)).map((category) => (
-                <span
+                <div
                   key={`category-meaning-${category}`}
-                  className="category-meaning-chip"
+                  className="chart-insight-row category-meaning-row"
                   style={{
-                    backgroundColor: CATEGORY_CHIP_STYLES[category]?.bg || "#f7fbff",
                     borderColor: CATEGORY_CHIP_STYLES[category]?.border || "#d7e4f2",
-                    color: CATEGORY_CHIP_STYLES[category]?.text || "#334155",
                   }}
                 >
-                  <span
-                    className="category-meaning-dot"
-                    style={{ backgroundColor: CATEGORY_CHIP_STYLES[category]?.dot || "#64748b" }}
-                  />
-                  <strong style={{ color: CATEGORY_CHIP_STYLES[category]?.text || "#334155" }}>{category}</strong>: {CATEGORY_MEANINGS[category]}
-                </span>
+                  <span className="chart-insight-row-label" style={{ color: CATEGORY_CHIP_STYLES[category]?.text || "#334155" }}>
+                    <span
+                      className="category-meaning-dot"
+                      style={{ backgroundColor: CATEGORY_CHIP_STYLES[category]?.dot || "#64748b" }}
+                    />
+                    <strong>{category}</strong>: {CATEGORY_MEANINGS[category]}
+                  </span>
+                </div>
               ))}
             </div>
-            {categoryExecutiveInsights.length ? (
-              <div className="chart-insight-exec">
-                <div className="chart-insight-exec-title">Category Insights</div>
-                <ul className="chart-insight-exec-list">
-                  {categoryExecutiveInsights.map((line, index) => (
-                    <li key={`category-insight-${index}`}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
           </div>
 
           <div className="chart-col">
             <h3>
               Infrastructure Readiness Index
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-                (Interactive: Click any point to drill down)
+                (Click any point to drill down)
               </span>
             </h3>
             <div className="chart-container">
@@ -1734,7 +1610,7 @@ export default function Dashboard() {
             <h3>
               India Coverage Map
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-                (Interactive: Click a state to open Master Map)
+                (Click a state to open Master Map)
               </span>
             </h3>
             <div className="chart-container map-holder">
@@ -1749,79 +1625,33 @@ export default function Dashboard() {
             {mapCapacitySummary && (
               <div className="chart-insight-card chart-insight-card--stacked">
                 <div className="chart-insight-row">
-                  <span className="chart-insight-row-label">Total {mapCapacitySummary.scopeLabel}</span>
-                  <span className="chart-insight-row-value">{mapCapacitySummary.totalGroups}</span>
-                </div>
-                <div className="chart-insight-row">
-                  <span className="chart-insight-row-label">Max Capacity</span>
+                  <span className="chart-insight-row-label">
+                    Max Capacity{mapCapacitySummary.contextLabel ? ` - ${mapCapacitySummary.contextLabel}` : ""}
+                  </span>
                   <span className="chart-insight-row-value">
-                    {mapCapacitySummary.maxName} ({formatCount(mapCapacitySummary.maxCapacity)})
+                    {mapCapacitySummary.maxName}
                   </span>
                 </div>
                 <div className="chart-insight-row">
-                  <span className="chart-insight-row-label">Min Capacity</span>
-                  <span className="chart-insight-row-value">
-                    {mapCapacitySummary.minName} ({formatCount(mapCapacitySummary.minCapacity)})
+                  <span className="chart-insight-row-label">Venue Count</span>
+                  <span className="chart-insight-row-value">{formatCount(mapCapacitySummary.maxCapacity)}</span>
+                </div>
+                <div className="chart-insight-row">
+                  <span className="chart-insight-row-label">
+                    Min Capacity{mapCapacitySummary.contextLabel ? ` - ${mapCapacitySummary.contextLabel}` : ""}
                   </span>
+                  <span className="chart-insight-row-value">
+                    {mapCapacitySummary.minName}
+                  </span>
+                </div>
+                <div className="chart-insight-row">
+                  <span className="chart-insight-row-label">Venue Count</span>
+                  <span className="chart-insight-row-value">{formatCount(mapCapacitySummary.minCapacity)}</span>
                 </div>
               </div>
             )}
           </div>
         </div>
-
-{canViewUnifiedManpower ? (
-          <section className="unified-perspective-section" id="manpower-perspective-section" ref={manpowerPerspectiveRef}>
-            <div className="unified-perspective-head">
-              <h3 className="section-title">Unified View: Manpower Perspective</h3>
-              <div className="unified-manpower-actions">
-                <button
-                  className="mp-action-btn mp-action-btn-primary"
-                  onClick={() => goTo("manpower_dashboard", { requiresAuth: true, allowedUsers: MANPOWER_ANALYTICS_USERS })}
-                >
-                  Open Detailed Manpower Analytics
-                </button>
-                <div className="unified-manpower-search">
-                  <input
-                    type="text"
-                    value={manpowerQuickSearch}
-                    onChange={(event) => setManpowerQuickSearch(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") handleManpowerQuickSearch();
-                    }}
-                    placeholder="Search manpower by name, pincode, project..."
-                  />
-                  <button
-                    type="button"
-                    className="mp-action-btn"
-                    onClick={handleManpowerQuickSearch}
-                  >
-                    Search
-                  </button>
-                </div>
-              </div>
-            </div>
-            {manpowerSnapshotError ? <div className="inline-error">{manpowerSnapshotError}</div> : null}
-            {manpowerSnapshotBusy ? (
-              <div className="photo-placeholder" style={{ height: "auto", padding: "18px", borderStyle: "dashed" }}>
-                Loading manpower perspective...
-              </div>
-            ) : (
-              <div className="unified-perspective-kpis">
-                <div className="unified-perspective-kpi"><span>Manpower</span><strong>{formatCount(manpowerSnapshotOverview.manpower)}</strong></div>
-                <div className="unified-perspective-kpi"><span>Projects</span><strong>{formatCount(manpowerSnapshotOverview.projects)}</strong></div>
-                <div className="unified-perspective-kpi"><span>Drives</span><strong>{formatCount(manpowerSnapshotOverview.drives)}</strong></div>
-                <div className="unified-perspective-kpi"><span>Venue Count</span><strong>{formatCount(manpowerSnapshotOverview.venueCount)}</strong></div>
-                <div className="unified-perspective-kpi"><span>Total Batches</span><strong>{formatCount(manpowerSnapshotOverview.totalBatches)}</strong></div>
-                <div className="unified-perspective-kpi"><span>No Delay</span><strong>{formatCount(manpowerSnapshotOverview.noBatchDelay)}</strong></div>
-                <div className="unified-perspective-kpi"><span>Call Logs</span><strong>{formatCount(manpowerSnapshotOverview.callLogs)}</strong></div>
-                <div className="unified-perspective-kpi"><span>FFA</span><strong>{formatCount(manpowerSnapshotOverview.ffa)}</strong></div>
-              </div>
-            )}
-          </section>
-        ) : null}
-
-
-
 
         {drilldownPath.key ? (
           <div className="kpi-drilldown-section" id="drilldown-section">
@@ -1957,60 +1787,62 @@ export default function Dashboard() {
           <h3>
             Region-Wise Status Distribution
             <span style={{ display: 'block', fontSize: '12px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-              (Interactive: Click any bar section to drill down)
+              (Click any bar section to drill down)
             </span>
           </h3>
-          <div className="flex-table-row">
+          <div className="flex-table-row chart-table-sync-row">
             <div className="half-col">
-              <div className="chart-legend-row chart-legend-row--status">
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: STATUS_COLORS.ACTIVE }} />
-                  ACTIVE
-                </span>
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: STATUS_COLORS.BLACKLISTED }} />
-                  BLACKLISTED
-                </span>
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: STATUS_COLORS["CUSTOMER SPECIFIC BLACKLISTED"] }} />
-                  CUSTOMER_SPECIFIC_BLACKLISTED
-                </span>
+              <div className="chart-table-panel">
+                <div className="chart-legend-row chart-legend-row--status">
+                  <span className="chart-legend-item">
+                    <span className="chart-legend-swatch" style={{ background: STATUS_COLORS.ACTIVE }} />
+                    ACTIVE
+                  </span>
+                  <span className="chart-legend-item">
+                    <span className="chart-legend-swatch" style={{ background: STATUS_COLORS.BLACKLISTED }} />
+                    BLACKLISTED
+                  </span>
+                  <span className="chart-legend-item">
+                    <span className="chart-legend-swatch" style={{ background: STATUS_COLORS["CUSTOMER SPECIFIC BLACKLISTED"] }} />
+                    CUSTOMER_SPECIFIC_BLACKLISTED
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={230}>
+                  <BarChart data={statusChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
+                    <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                    <RechartsTooltip formatter={(value) => formatCount(value)} cursor={false} />
+                    <Bar
+                      dataKey="ACTIVE"
+                      fill={STATUS_COLORS.ACTIVE}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleStatusChartBarClick(entry, "ACTIVE")}
+                    >
+                      <LabelList dataKey="ACTIVE" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                    <Bar
+                      dataKey="BLACKLISTED"
+                      fill={STATUS_COLORS.BLACKLISTED}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleStatusChartBarClick(entry, "BLACKLISTED")}
+                    >
+                      <LabelList dataKey="BLACKLISTED" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                    <Bar
+                      dataKey="CUSTOMER_SPECIFIC_BLACKLISTED"
+                      fill={STATUS_COLORS["CUSTOMER SPECIFIC BLACKLISTED"]}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleStatusChartBarClick(entry, "CUSTOMER_SPECIFIC_BLACKLISTED")}
+                    >
+                      <LabelList dataKey="CUSTOMER_SPECIFIC_BLACKLISTED" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={330}>
-                <BarChart data={statusChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <RechartsTooltip formatter={(value) => formatCount(value)} cursor={false} />
-                  <Bar
-                    dataKey="ACTIVE"
-                    fill={STATUS_COLORS.ACTIVE}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleStatusChartBarClick(entry, "ACTIVE")}
-                  >
-                    <LabelList dataKey="ACTIVE" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                  <Bar
-                    dataKey="BLACKLISTED"
-                    fill={STATUS_COLORS.BLACKLISTED}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleStatusChartBarClick(entry, "BLACKLISTED")}
-                  >
-                    <LabelList dataKey="BLACKLISTED" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                  <Bar
-                    dataKey="CUSTOMER_SPECIFIC_BLACKLISTED"
-                    fill={STATUS_COLORS["CUSTOMER SPECIFIC BLACKLISTED"]}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleStatusChartBarClick(entry, "CUSTOMER_SPECIFIC_BLACKLISTED")}
-                  >
-                    <LabelList dataKey="CUSTOMER_SPECIFIC_BLACKLISTED" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
             </div>
             <div className="half-col half-col--axis-start">
               <DashboardTable
@@ -2047,78 +1879,80 @@ export default function Dashboard() {
           <h3>
             Region-Wise Category Breakdown
             <span style={{ display: 'block', fontSize: '12px', color: '#64748b', fontWeight: '500', marginTop: '4px', textTransform: 'none' }}>
-              (Interactive: Click any bar section to drill down)
+              (Click any bar section to drill down)
             </span>
           </h3>
-          <div className="flex-table-row">
+          <div className="flex-table-row chart-table-sync-row">
             <div className="half-col">
-              <div className="chart-legend-row">
-                {[
-                  { key: "A", color: CATEGORY_COLORS.A },
-                  { key: "B", color: CATEGORY_COLORS.B },
-                  { key: "C", color: CATEGORY_COLORS.C },
-                  { key: "BL-C", color: CATEGORY_COLORS["BL-C"] },
-                  { key: "BL", color: CATEGORY_COLORS.BL },
-                ].map((item) => (
-                  <span className="chart-legend-item" key={`cat-legend-${item.key}`}>
-                    <span className="chart-legend-swatch" style={{ background: item.color }} />
-                    {item.key}
-                  </span>
-                ))}
+              <div className="chart-table-panel">
+                <div className="chart-legend-row">
+                  {[
+                    { key: "A", color: CATEGORY_COLORS.A },
+                    { key: "B", color: CATEGORY_COLORS.B },
+                    { key: "C", color: CATEGORY_COLORS.C },
+                    { key: "BL-C", color: CATEGORY_COLORS["BL-C"] },
+                    { key: "BL", color: CATEGORY_COLORS.BL },
+                  ].map((item) => (
+                    <span className="chart-legend-item" key={`cat-legend-${item.key}`}>
+                      <span className="chart-legend-swatch" style={{ background: item.color }} />
+                      {item.key}
+                    </span>
+                  ))}
+                </div>
+                <ResponsiveContainer width="100%" height={230}>
+                  <BarChart data={categoryChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
+                    <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                    <RechartsTooltip formatter={(value) => formatCount(value)} cursor={false} />
+                    <Bar
+                      dataKey="A"
+                      fill={CATEGORY_COLORS.A}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleCategoryChartBarClick(entry, "A")}
+                    >
+                      <LabelList dataKey="A" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                    <Bar
+                      dataKey="B"
+                      fill={CATEGORY_COLORS.B}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleCategoryChartBarClick(entry, "B")}
+                    >
+                      <LabelList dataKey="B" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                    <Bar
+                      dataKey="C"
+                      fill={CATEGORY_COLORS.C}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleCategoryChartBarClick(entry, "C")}
+                    >
+                      <LabelList dataKey="C" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                    <Bar
+                      dataKey="BL-C"
+                      fill={CATEGORY_COLORS["BL-C"]}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleCategoryChartBarClick(entry, "BL-C")}
+                    >
+                      <LabelList dataKey="BL-C" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                    <Bar
+                      dataKey="BL"
+                      fill={CATEGORY_COLORS.BL}
+                      minPointSize={3}
+                      cursor="pointer"
+                      onClick={(entry) => handleCategoryChartBarClick(entry, "BL")}
+                    >
+                      <LabelList dataKey="BL" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <ResponsiveContainer width="100%" height={330}>
-                <BarChart data={categoryChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <RechartsTooltip formatter={(value) => formatCount(value)} cursor={false} />
-                  <Bar
-                    dataKey="A"
-                    fill={CATEGORY_COLORS.A}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleCategoryChartBarClick(entry, "A")}
-                  >
-                    <LabelList dataKey="A" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                  <Bar
-                    dataKey="B"
-                    fill={CATEGORY_COLORS.B}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleCategoryChartBarClick(entry, "B")}
-                  >
-                    <LabelList dataKey="B" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                  <Bar
-                    dataKey="C"
-                    fill={CATEGORY_COLORS.C}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleCategoryChartBarClick(entry, "C")}
-                  >
-                    <LabelList dataKey="C" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                  <Bar
-                    dataKey="BL-C"
-                    fill={CATEGORY_COLORS["BL-C"]}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleCategoryChartBarClick(entry, "BL-C")}
-                  >
-                    <LabelList dataKey="BL-C" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                  <Bar
-                    dataKey="BL"
-                    fill={CATEGORY_COLORS.BL}
-                    minPointSize={3}
-                    cursor="pointer"
-                    onClick={(entry) => handleCategoryChartBarClick(entry, "BL")}
-                  >
-                    <LabelList dataKey="BL" position="top" style={{ fontSize: 10, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
             </div>
             <div className="half-col half-col--axis-start">
               <DashboardTable
@@ -2149,15 +1983,14 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="heading-banner">
-          <h2>Operational Distribution (DOTC vs DATC)</h2>
-          <p>Detailed geographic breakdown of venue classifications</p>
-        </div>
-
-        <div className="section-full">
+        <div className="section-full section-full--operational operational-shell">
+          <div className="operational-shell-head">
+            <h2>Operational Distribution (DOTC vs DATC)</h2>
+            <p>Detailed geographic breakdown of venue classifications</p>
+          </div>
           <h3>Region-Wise Distribution</h3>
-          <div className="col-2-grid">
-            <div>
+          <div className="col-2-grid operational-grid">
+            <div className="operational-panel">
               <div className="chart-title">Venue Count Distribution</div>
               <div className="chart-legend-row">
                 <span className="chart-legend-item">
@@ -2169,22 +2002,38 @@ export default function Dashboard() {
                   DOTC
                 </span>
               </div>
-              <ResponsiveContainer width="100%" height={330}>
+              <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={distributionCountData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Bar dataKey="DATC" fill={OPERATIONAL_COLORS.DATC} minPointSize={4}>
+                  <Bar
+                    dataKey="DATC"
+                    fill={OPERATIONAL_COLORS.DATC}
+                    stroke={OPERATIONAL_STROKES.DATC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.95}
+                    minPointSize={5}
+                    radius={[6, 6, 0, 0]}
+                  >
                     <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
-                  <Bar dataKey="DOTC" fill={OPERATIONAL_COLORS.DOTC} minPointSize={4}>
+                  <Bar
+                    dataKey="DOTC"
+                    fill={OPERATIONAL_COLORS.DOTC}
+                    stroke={OPERATIONAL_STROKES.DOTC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.96}
+                    minPointSize={10}
+                    radius={[6, 6, 0, 0]}
+                  >
                     <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div>
+            <div className="operational-panel">
               <div className="chart-title">Total Seat Capacity</div>
               <div className="chart-legend-row">
                 <span className="chart-legend-item">
@@ -2196,16 +2045,32 @@ export default function Dashboard() {
                   DOTC
                 </span>
               </div>
-              <ResponsiveContainer width="100%" height={330}>
+              <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={distributionCapacityData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                   <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
                   <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                   <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Bar dataKey="DATC" fill={OPERATIONAL_COLORS.DATC} minPointSize={4}>
+                  <Bar
+                    dataKey="DATC"
+                    fill={OPERATIONAL_COLORS.DATC}
+                    stroke={OPERATIONAL_STROKES.DATC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.95}
+                    minPointSize={5}
+                    radius={[6, 6, 0, 0]}
+                  >
                     <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
-                  <Bar dataKey="DOTC" fill={OPERATIONAL_COLORS.DOTC} minPointSize={4}>
+                  <Bar
+                    dataKey="DOTC"
+                    fill={OPERATIONAL_COLORS.DOTC}
+                    stroke={OPERATIONAL_STROKES.DOTC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.96}
+                    minPointSize={10}
+                    radius={[6, 6, 0, 0]}
+                  >
                     <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: '#64748b' }} formatter={(val) => val > 0 ? formatCount(val) : ''} />
                   </Bar>
                 </BarChart>
@@ -2222,8 +2087,8 @@ export default function Dashboard() {
               "DATC Venues",
               "DOTC Venues",
               "Total Venues",
-              "DATC MAX CAPACITY",
-              "DOTC MAX CAPACITY",
+              "DATC Max Capacity",
+              "DOTC Max Capacity",
               "Total Capacity",
             ]}
             rows={regionSummaries.map((item) => [
@@ -2268,5 +2133,6 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 

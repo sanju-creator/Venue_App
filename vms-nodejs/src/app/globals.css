@@ -4996,6 +4996,23 @@ select {
   gap: 8px;
 }
 
+/* Keep all three visual insight areas aligned with uniform card height */
+.chart-row-3 .category-meaning-compact,
+.chart-row-3 .chart-insight-card--stacked {
+  min-height: 228px;
+  height: 228px;
+}
+
+.chart-row-3 .chart-col:not(:first-child) .chart-insight-card--stacked {
+  align-content: stretch;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
+.chart-row-3 .chart-col:not(:first-child) .chart-insight-card--stacked .chart-insight-row {
+  min-height: 0;
+  height: 100%;
+}
+
 .chart-insight-pill {
   display: inline-flex;
   align-items: center;
@@ -5058,10 +5075,16 @@ select {
 }
 
 .category-meaning-compact {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid #d6e2ef;
+  border-radius: 12px;
+  background: #f8fbff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+  padding: 10px 12px;
 }
 
 .category-meaning-chip {
@@ -5095,6 +5118,7 @@ select {
   border-radius: 10px;
   padding: 7px 9px;
   background: #ffffff;
+  min-height: 34px;
 }
 
 .chart-insight-row-label {
@@ -5612,6 +5636,7 @@ select {
 }
 
 .map-legend {
+  position: absolute;
   bottom: 8px;
   right: 8px;
   background: rgba(255, 255, 255, 0.9);
@@ -5620,6 +5645,7 @@ select {
   padding: 6px;
   font-size: 10px;
   color: #334155;
+  z-index: 6;
 }
 
 .mp-performance-section {

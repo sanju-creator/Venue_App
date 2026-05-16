@@ -1795,6 +1795,9 @@ function runManpowerQuery(filters = {}) {
   const selectedRegions = new Set(listFilter(filters.regions));
   const selectedStates = new Set(listFilter(filters.states));
   const selectedExamCityCentres = new Set(listFilter(filters.examCityCentres));
+  const selectedStatuses = new Set(listFilter(filters.statuses).map((value) => cleanText(value).toUpperCase()));
+  const selectedCategories = new Set(listFilter(filters.categories).map((value) => cleanText(value).toUpperCase()));
+  const selectedVenueTypes = new Set(listFilter(filters.venueTypes).map((value) => cleanText(value).toUpperCase()));
   const selectedDelayStatuses = new Set(listFilter(filters.delayStatuses));
   const selectedIssues = new Set(listFilter(filters.issueFilters));
 
@@ -1844,6 +1847,18 @@ function runManpowerQuery(filters = {}) {
       const c = cleanText(row.city);
       const val = d && c ? `${d} / ${c}` : (d || c);
       if (!selectedExamCityCentres.has(val)) return false;
+    }
+    if (selectedStatuses.size) {
+      const statusValue = cleanText(row.status).toUpperCase();
+      if (!selectedStatuses.has(statusValue)) return false;
+    }
+    if (selectedCategories.size) {
+      const categoryValue = cleanText(row.category).toUpperCase();
+      if (!selectedCategories.has(categoryValue)) return false;
+    }
+    if (selectedVenueTypes.size) {
+      const venueTypeValue = cleanText(row.venue_type || row.type || row.venueType).toUpperCase();
+      if (!selectedVenueTypes.has(venueTypeValue)) return false;
     }
 
     if (selectedDelayStatuses.size) {

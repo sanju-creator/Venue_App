@@ -51,9 +51,8 @@ const STATE_TO_FILE = {
   "West Bengal": "west-bengal.json",
 };
 
-export default function StateMap({ stateName, data = {}, onDistrictClick }) {
+export default function StateMap({ stateName, data = {}, onDistrictClick, focusedDistrict = "", focusedVenueRows = [] }) {
   const [topoData, setTopoData] = useState(null);
-  const [projection, setProjection] = useState(null);
   const [tooltipContent, setTooltipContent] = useState("");
 
   const fileName = STATE_TO_FILE[stateName];
@@ -65,19 +64,115 @@ export default function StateMap({ stateName, data = {}, onDistrictClick }) {
     }
     fetch(`/data/states/${fileName}`)
       .then((res) => res.json())
-      .then((json) => {
-        setTopoData(json);
-        
-        // Compute the bounding box of the state to center and scale the map
-        const objectKey = Object.keys(json.objects)[0];
-        const geoJsonData = feature(json, json.objects[objectKey]);
-        
-        // We calculate a custom projection that fits the specific state geometry
-        const proj = d3Geo.geoMercator().fitSize([800, 500], geoJsonData);
-        setProjection(() => proj);
-      })
+      .then((json) => setTopoData(json))
       .catch((err) => console.error(`Error loading state map data for ${stateName}:`, err));
   }, [stateName, fileName]);
+
+  const allFeatures = useMemo(() => {
+    if (!topoData) return [];
+    const objectKey = Object.keys(topoData.objects || {})[0];
+    if (!objectKey) return [];
+    return feature(topoData, topoData.objects[objectKey]).features || [];
+  }, [topoData]);
+
+  const normalizedFocusedDistrict = String(focusedDistrict || "").trim().toLowerCase();
+  const focusTokens = useMemo(() => {
+    const tokens = new Set();
+    if (normalizedFocusedDistrict) tokens.add(normalizedFocusedDistrict);
+    (Array.isArray(focusedVenueRows) ? focusedVenueRows : []).forEach((row) => {
+      const d = String(row?.district || "").trim().toLowerCase();
+      const c = String(row?.city || "").trim().toLowerCase();
+      if (d) tokens.add(d);
+      if (c) tokens.add(c);
+    });
+    return Array.from(tokens);
+  }, [focusedVenueRows, normalizedFocusedDistrict]);
+
+  const districtMatchesFocus = (districtName) => {
+    const name = String(districtName || "").trim().toLowerCase();
+    if (!name) return false;
+    return focusTokens.some((token) => token && (name.includes(token) || token.includes(name)));
+  };
+
+  const displayedFeatures = useMemo(() => {
+    if (!focusTokens.length) return allFeatures;
+    return allFeatures.filter((geo) => {
+      const districtName = geo.properties.dt_name || geo.properties.district || geo.properties.name || "";
+      return districtMatchesFocus(districtName);
+    });
+  }, [allFeatures, focusTokens]);
+
+  const focusedDistrictFeature = useMemo(() => {
+    if (!focusTokens.length) return null;
+    return allFeatures.find((geo) => {
+      const districtName = geo.properties.dt_name || geo.properties.district || geo.properties.name || "";
+      return districtMatchesFocus(districtName);
+    }) || null;
+  }, [allFeatures, focusTokens]);
+
+  const venuePins = useMemo(() => {
+    if (!focusTokens.length || !focusedDistrictFeature) return [];
+    const source = Array.isArray(focusedVenueRows) ? focusedVenueRows : [];
+    if (!source.length) return [];
+
+    const featuresCollection = {
+      type: "FeatureCollection",
+      features: [focusedDistrictFeature],
+    };
+    const bounds = d3Geo.geoBounds(featuresCollection);
+    const minLon = bounds?.[0]?.[0];
+    const minLat = bounds?.[0]?.[1];
+    const maxLon = bounds?.[1]?.[0];
+    const maxLat = bounds?.[1]?.[1];
+
+    if (![minLon, minLat, maxLon, maxLat].every(Number.isFinite)) return [];
+
+    const venues = source.map((row, idx) => ({
+      id: `${idx}-${String(row?.dmsCode || "").trim()}-${String(row?.venueName || "").trim()}`,
+      venueName: String(row?.venueName || row?.venue_name || `Venue ${idx + 1}`).trim() || `Venue ${idx + 1}`,
+      venueType: String(row?.venueType || "-").trim() || "-",
+      capacity: Number(row?.venueMaxCapacity) || 0,
+    }));
+
+    const total = venues.length;
+    const cols = Math.max(1, Math.ceil(Math.sqrt(total)));
+    const rows = Math.max(1, Math.ceil(total / cols));
+    const lonSpan = Math.max(0.08, maxLon - minLon);
+    const latSpan = Math.max(0.08, maxLat - minLat);
+
+    const pins = [];
+    venues.forEach((venue, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      const lon = minLon + ((col + 1) / (cols + 1)) * lonSpan;
+      const lat = maxLat - ((row + 1) / (rows + 1)) * latSpan;
+      const point = [lon, lat];
+      if (!d3Geo.geoContains(focusedDistrictFeature, point)) return;
+      pins.push({ ...venue, coordinates: point });
+    });
+
+    if (pins.length === 0) {
+      const center = d3Geo.geoCentroid(focusedDistrictFeature);
+      return venues.map((venue, index) => ({
+        ...venue,
+        coordinates: [
+          center[0] + ((index % 3) - 1) * 0.03,
+          center[1] + (Math.floor(index / 3) - 1) * 0.02,
+        ],
+      }));
+    }
+
+    return pins;
+  }, [focusTokens, focusedDistrictFeature, focusedVenueRows]);
+
+  const projection = useMemo(() => {
+    if (!allFeatures.length) return null;
+    const targetGeoJson = {
+      type: "FeatureCollection",
+      features: displayedFeatures.length ? displayedFeatures : allFeatures,
+    };
+    return d3Geo.geoMercator().fitExtent([[35, 35], [765, 465]], targetGeoJson);
+  }, [allFeatures, displayedFeatures]);
 
   const colorScale = useMemo(() => {
     const counts = Object.values(data).filter((c) => c > 0);
@@ -122,6 +217,7 @@ export default function StateMap({ stateName, data = {}, onDistrictClick }) {
             <>
               {geographies.map((geo) => {
                 const districtName = geo.properties.dt_name || geo.properties.district || geo.properties.name || "Unknown";
+                if (displayedFeatures.length && !districtMatchesFocus(districtName)) return null;
                 const count = data[districtName] || 0;
 
                 return (
@@ -159,6 +255,7 @@ export default function StateMap({ stateName, data = {}, onDistrictClick }) {
               {geographies.map((geo) => {
                 const centroid = d3Geo.geoCentroid(geo);
                 const districtName = geo.properties.dt_name || geo.properties.district || geo.properties.name || "Unknown";
+                if (displayedFeatures.length && !districtMatchesFocus(districtName)) return null;
                 
                 return (
                   <Marker key={geo.rsmKey + "-label"} coordinates={centroid}>
@@ -179,20 +276,43 @@ export default function StateMap({ stateName, data = {}, onDistrictClick }) {
                   </Marker>
                 );
               })}
+              {venuePins.map((pin, idx) => (
+                <Marker key={`venue-pin-${pin.id}`} coordinates={pin.coordinates}>
+                  <g>
+                    <circle r={4} fill="#dc2626" stroke="#ffffff" strokeWidth={1.2} />
+                    <text
+                      x={8}
+                      y={idx % 2 === 0 ? -2 : 10}
+                      style={{
+                        fontFamily: "inherit",
+                        fill: "#0f172a",
+                        fontSize: "10px",
+                        fontWeight: "700",
+                        pointerEvents: "none",
+                        textShadow: "0px 0px 2px rgba(255,255,255,0.95)",
+                      }}
+                    >
+                      {pin.venueName}
+                    </text>
+                  </g>
+                </Marker>
+              ))}
             </>
           )}
         </Geographies>
       </ComposableMap>
-      <div className="map-legend">
-        <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-          <div style={{ width: "12px", height: "12px", background: "#f8fafc", border: "1px solid #cbd5e1" }}></div>
-          <span>No Venues</span>
+      {!focusTokens.length && (
+        <div className="map-legend">
+          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+            <div style={{ width: "12px", height: "12px", background: "#f8fafc", border: "1px solid #cbd5e1" }}></div>
+            <span>No Venues</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "2px" }}>
+            <div style={{ width: "12px", height: "12px", background: "#1b7bb7" }}></div>
+            <span>High Density</span>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "5px", marginTop: "2px" }}>
-          <div style={{ width: "12px", height: "12px", background: "#1b7bb7" }}></div>
-          <span>High Density</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

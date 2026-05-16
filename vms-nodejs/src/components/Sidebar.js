@@ -134,6 +134,21 @@ export default function Sidebar({
     typeof onSelectAll === "function" &&
     typeof onClearAll === "function";
 
+  useEffect(() => {
+    if (!isDynamic || page !== "manpower_dashboard") return;
+    setOpenSections((prev) => {
+      const allOpen = FILTER_SECTIONS.every((section) => prev[section.title]);
+      if (allOpen) return prev;
+      return Object.fromEntries(FILTER_SECTIONS.map((section) => [section.title, true]));
+    });
+    setOpenGroups((prev) => {
+      const keys = FILTER_SECTIONS.flatMap((section) => section.items.map((item) => item.key));
+      const allOpen = keys.every((key) => prev[key]);
+      if (allOpen) return prev;
+      return Object.fromEntries(keys.map((key) => [key, true]));
+    });
+  }, [isDynamic, page]);
+
   const selectedCount = (key) => (selectedFilters?.[key] || []).length;
   const totalCount = (key) => (filterOptions?.[key] || []).length;
 
@@ -189,7 +204,8 @@ export default function Sidebar({
   const handleGlobalSearch = async () => {
     const query = String(globalSearchInput || "").trim();
     setGlobalSearchQuery(query);
-    setGlobalSearchModalOpen(Boolean(query));
+    const shouldAutoOpenModal = globalSearchConfig?.autoOpenModal !== false;
+    setGlobalSearchModalOpen(Boolean(query) && shouldAutoOpenModal);
     setGlobalSearchFallbackResult(null);
     setGlobalSearchFallbackError("");
 
