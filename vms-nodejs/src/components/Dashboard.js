@@ -1543,6 +1543,69 @@ export default function Dashboard() {
     return formatComparisonMetricValue(activeComparisonMetric, totalValue);
   }, [activeComparisonMetric, comparisonKpis, formatComparisonMetricValue]);
 
+  const comparisonDrillTableConfig = useMemo(() => {
+    if (manpowerDrillLevel === "state") {
+      return {
+        title: `State-wise ${selectedComparisonMetricLabel}`,
+        header: "State",
+        rows: comparisonStateData,
+        emptyMessage: "No state data found for selected region.",
+      };
+    }
+    if (manpowerDrillLevel === "city") {
+      return {
+        title: `City-wise ${selectedComparisonMetricLabel}`,
+        header: "City",
+        rows: comparisonCityLevelData,
+        emptyMessage: "No city data found for selected state.",
+      };
+    }
+    if (manpowerDrillLevel === "district") {
+      return {
+        title: `District-wise ${selectedComparisonMetricLabel}`,
+        header: "District",
+        rows: comparisonDistrictData,
+        emptyMessage: "No district data found for selected city.",
+      };
+    }
+    return {
+      title: `Region-wise ${selectedComparisonMetricLabel}`,
+      header: "Region",
+      rows: comparisonRegionData,
+      emptyMessage: "No region data found for selected filters.",
+    };
+  }, [
+    manpowerDrillLevel,
+    selectedComparisonMetricLabel,
+    comparisonRegionData,
+    comparisonStateData,
+    comparisonCityLevelData,
+    comparisonDistrictData,
+  ]);
+
+  const handleComparisonDrillTableRowClick = useCallback((bucketName) => {
+    if (!bucketName) return;
+    if (manpowerDrillLevel === "region") {
+      setComparisonRegion((prev) => (prev === bucketName ? "" : bucketName));
+      setComparisonState("");
+      setComparisonCity("");
+      setComparisonDistrict("");
+      return;
+    }
+    if (manpowerDrillLevel === "state") {
+      setComparisonState((prev) => (prev === bucketName ? "" : bucketName));
+      setComparisonCity("");
+      setComparisonDistrict("");
+      return;
+    }
+    if (manpowerDrillLevel === "city") {
+      setComparisonCity((prev) => (prev === bucketName ? "" : bucketName));
+      setComparisonDistrict("");
+      return;
+    }
+    setComparisonDistrict((prev) => (prev === bucketName ? "" : bucketName));
+  }, [manpowerDrillLevel]);
+
   const manpowerRegionComparisonData = useMemo(() => {
     const sourceRows = Array.isArray(manpowerSnapshot?.manpowerWiseSummary)
       ? manpowerSnapshot.manpowerWiseSummary
@@ -2837,134 +2900,32 @@ export default function Dashboard() {
               </div>
 
               <div className="section-full comparison-region-summary-table">
-                <h3 className="summary-subtitle">Region-wise {selectedComparisonMetricLabel}</h3>
+                <h3 className="summary-subtitle">{comparisonDrillTableConfig.title}</h3>
                 <div className="table-wrap">
                   <table className="data-table">
                     <thead>
                       <tr>
-                        <th>Region</th>
+                        <th>{comparisonDrillTableConfig.header}</th>
                         <th>{selectedComparisonMetricLabel}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {comparisonRegionData.length ? (
-                        comparisonRegionData.map((row) => (
-                          <tr key={`cmp-region-row-${row.name}`}>
-                            <td>{renderClickable(row.name, () => {
-                              setComparisonRegion((prev) => (prev === row.name ? "" : row.name));
-                              setComparisonState("");
-                              setComparisonCity("");
-                              setComparisonDistrict("");
-                            })}</td>
+                      {comparisonDrillTableConfig.rows.length ? (
+                        comparisonDrillTableConfig.rows.map((row) => (
+                          <tr key={`cmp-drill-row-${manpowerDrillLevel}-${row.name}`}>
+                            <td>{renderClickable(row.name, () => handleComparisonDrillTableRowClick(row.name))}</td>
                             <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={2}>No region data found for selected filters.</td>
+                          <td colSpan={2}>{comparisonDrillTableConfig.emptyMessage}</td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
               </div>
-
-              {comparisonRegion ? (
-                <div className="section-full comparison-region-summary-table">
-                  <h3 className="summary-subtitle">State-wise {selectedComparisonMetricLabel}</h3>
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>State</th>
-                          <th>{selectedComparisonMetricLabel}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {comparisonStateData.length ? (
-                          comparisonStateData.map((row) => (
-                            <tr key={`cmp-state-row-${row.name}`}>
-                              <td>{renderClickable(row.name, () => {
-                                setComparisonState((prev) => (prev === row.name ? "" : row.name));
-                                setComparisonCity("");
-                                setComparisonDistrict("");
-                              })}</td>
-                              <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={2}>No state data found for selected region.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
-
-              {comparisonState ? (
-                <div className="section-full comparison-region-summary-table">
-                  <h3 className="summary-subtitle">City-wise {selectedComparisonMetricLabel}</h3>
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>City</th>
-                          <th>{selectedComparisonMetricLabel}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {comparisonCityLevelData.length ? (
-                          comparisonCityLevelData.map((row) => (
-                            <tr key={`cmp-city-row-${row.name}`}>
-                              <td>{renderClickable(row.name, () => {
-                                setComparisonCity((prev) => (prev === row.name ? "" : row.name));
-                                setComparisonDistrict("");
-                              })}</td>
-                              <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={2}>No city data found for selected state.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
-
-              {comparisonCity ? (
-                <div className="section-full comparison-region-summary-table">
-                  <h3 className="summary-subtitle">District-wise {selectedComparisonMetricLabel}</h3>
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>District</th>
-                          <th>{selectedComparisonMetricLabel}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {comparisonDistrictData.length ? (
-                          comparisonDistrictData.map((row) => (
-                            <tr key={`cmp-district-row-${row.name}`}>
-                              <td>{renderClickable(row.name, () => setComparisonDistrict((prev) => (prev === row.name ? "" : row.name)))}</td>
-                              <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={2}>No district data found for selected city.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
             </div>
           ) : null}
         </div>
