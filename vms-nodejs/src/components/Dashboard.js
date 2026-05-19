@@ -2890,14 +2890,14 @@ export default function Dashboard() {
                   <ResponsiveContainer width="100%" height={280}>
                     <BarChart key={`comparison-drill-${effectiveComparisonView}-${manpowerDrillLevel}-${activeComparisonMetric}`} data={manpowerDrillChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: manpowerDrillLevel === "region" ? 12 : 10 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: manpowerDrillLevel === "region" ? 15 : 14 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 14 }} />
                       <RechartsTooltip formatter={(value) => formatComparisonMetricValue(activeComparisonMetric, value)} />
                       <Bar dataKey="value" name={selectedComparisonMetricLabel} fill="#3f7fdd" minPointSize={5} onClick={handleManpowerDrillBarClick}>
                         <LabelList
                           dataKey="value"
                           position="top"
-                          style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                          style={{ fontSize: 14, fill: "#64748b", fontWeight: 700 }}
                           formatter={(val) => toNumber(val) > 0 ? formatComparisonMetricValue(activeComparisonMetric, val) : ""}
                         />
                       </Bar>

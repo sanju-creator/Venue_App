@@ -6603,17 +6603,85 @@ select {
   border-color: #255fc2;
 }
 
-.mp-performance-section {
+.mp-performance-section,
+.comparison-analytics-shell {
   margin-top: 10px;
   border: 1px solid #d7e3f0;
-  border-radius: 10px;
-  background: #fff;
-  padding: 10px;
-  box-shadow: 0 3px 10px rgba(31, 56, 93, 0.04);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+  box-shadow: 0 6px 16px rgba(31, 56, 93, 0.06);
+}
+
+.mp-performance-section {
+  padding: 0 0 10px;
+  overflow: hidden;
+}
+
+.mp-performance-section > :not(.mp-performance-head) {
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.mp-performance-head,
+.comparison-ribbon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(96deg, #eaf2fd 0%, #f5f9ff 55%, #fbfdff 100%);
+  border-bottom: 1px solid #d9e3f0;
 }
 
 .mp-performance-head {
-  margin-bottom: 8px;
+  margin-bottom: 0;
+}
+
+.mp-performance-head .section-title,
+.comparison-ribbon-left h2 {
+  margin: 0;
+  line-height: 1.2;
+  font-size: 24px;
+  color: #1e3a5f;
+  font-weight: 800;
+}
+
+.comparison-ribbon-left p,
+.mp-performance-section .result-sub {
+  margin: 3px 0 0;
+  font-size: 14px;
+  color: #5a7291;
+}
+
+.comparison-view-btn,
+.comparison-ribbon-right .dataset-pill,
+.mp-performance-tabs .mp-action-btn {
+  border: 1px solid #b9cce4;
+  border-radius: 999px;
+  min-height: 40px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #355276;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.comparison-view-btn:hover,
+.comparison-ribbon-right .dataset-pill:hover,
+.mp-performance-tabs .mp-action-btn:hover {
+  border-color: #8fb0d6;
+  background: #f5f9ff;
+}
+
+.comparison-view-btn.active,
+.comparison-ribbon-right .dataset-pill.active,
+.mp-performance-tabs .mp-action-btn.mp-action-btn-primary {
+  border-color: #6f97ca;
+  background: #e9f2ff;
+  color: #173e72;
+  box-shadow: inset 0 0 0 1px rgba(63, 127, 221, 0.16);
 }
 
 .mp-performance-scopes {
@@ -6696,36 +6764,8 @@ select {
 }
 
 .comparison-analytics-shell {
-  margin-top: 10px;
-  border: 1px solid #dbe5f2;
-  border-top: 2px solid #c7d7ea;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
   padding: 0;
   overflow: hidden;
-  box-shadow: 0 10px 24px rgba(30, 58, 95, 0.08);
-}
-
-.comparison-ribbon {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: linear-gradient(96deg, #eaf2fd 0%, #f5f9ff 55%, #fbfdff 100%);
-  border-bottom: 1px solid #d9e3f0;
-}
-
-.comparison-ribbon-left h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #1e3a5f;
-}
-
-.comparison-ribbon-left p {
-  margin: 3px 0 0;
-  font-size: 12px;
-  color: #5a7291;
 }
 
 .comparison-ribbon-right {
@@ -6758,18 +6798,19 @@ select {
 
 .comparison-metric-select-wrap label {
   color: #3f5d80;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .comparison-metric-select {
   min-width: 240px;
-  min-height: 36px;
+  min-height: 40px;
   border: 1px solid #bfd1e5;
   border-radius: 8px;
   background: #ffffff;
   color: #334e6f;
   font-weight: 600;
+  font-size: 16px;
   padding: 0 10px;
 }
 
@@ -6791,37 +6832,14 @@ select {
 }
 
 .comparison-metric-total span {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
 }
 
 .comparison-metric-total strong {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 800;
   color: #173e72;
-}
-
-.comparison-view-btn {
-  border: 1px solid #b9cce4;
-  background: #ffffff;
-  color: #355276;
-  font-weight: 700;
-  border-radius: 999px;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.comparison-view-btn:hover {
-  border-color: #8fb0d6;
-  background: #f5f9ff;
-}
-
-.comparison-view-btn.active {
-  border-color: #6f97ca;
-  background: #e9f2ff;
-  color: #173e72;
-  box-shadow: inset 0 0 0 1px rgba(63, 127, 221, 0.16);
 }
 
 .comparison-expand-panel {
@@ -6852,7 +6870,7 @@ select {
   border-radius: 10px;
   background: #f2f8ff;
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: 14px;
   color: #4d6788;
 }
 
@@ -6870,14 +6888,14 @@ select {
   background: #ffffff;
   color: #2f4a6d;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .btn-outline.btn-outline--small {
   width: auto;
-  min-height: 30px;
+  min-height: 34px;
   padding: 5px 12px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .comparison-grid {
@@ -6892,7 +6910,7 @@ select {
 
 .comparison-grid .chart-title {
   color: #1f3f66;
-  font-size: 16px;
+  font-size: 20px;
   letter-spacing: 0.01em;
 }
 
@@ -6902,6 +6920,18 @@ select {
 
 .comparison-region-summary-table {
   margin-top: 8px;
+}
+
+.comparison-analytics-shell .summary-subtitle {
+  font-size: 24px;
+}
+
+.comparison-analytics-shell .data-table th {
+  font-size: 15px;
+}
+
+.comparison-analytics-shell .data-table td {
+  font-size: 14px;
 }
 
 .comparison-drilldown-hint {
