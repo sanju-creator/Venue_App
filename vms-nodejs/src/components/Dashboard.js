@@ -1576,12 +1576,9 @@ export default function Dashboard() {
   const comparisonDrillTableRows = useMemo(
     () =>
       comparisonDrillTableConfig.rows.filter(
-        (row) =>
-          COMPARISON_METRIC_OPTIONS.some(
-            (metric) => toNumber(getAggregateComparisonMetricValue(row, metric.key)) > 0,
-          ),
+        (row) => toNumber(getAggregateComparisonMetricValue(row, activeComparisonMetric)) > 0,
       ),
-    [comparisonDrillTableConfig.rows, getAggregateComparisonMetricValue],
+    [comparisonDrillTableConfig.rows, getAggregateComparisonMetricValue, activeComparisonMetric],
   );
 
   const handleComparisonDrillTableRowClick = useCallback((rowData) => {
