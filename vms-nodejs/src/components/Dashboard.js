@@ -1356,6 +1356,24 @@ export default function Dashboard() {
     return selected?.label || "";
   }, [comparisonView]);
 
+  const comparisonMetricOptions = useMemo(() => {
+    if (!comparisonView) return [];
+    return COMPARISON_METRIC_OPTIONS_BY_VIEW[comparisonView] || [];
+  }, [comparisonView]);
+
+  const activeComparisonMetric = useMemo(() => {
+    if (!comparisonMetricOptions.length) return "";
+    if (selectedComparisonMetric && comparisonMetricOptions.some((option) => option.key === selectedComparisonMetric)) {
+      return selectedComparisonMetric;
+    }
+    return comparisonMetricOptions[0]?.key || "";
+  }, [comparisonMetricOptions, selectedComparisonMetric]);
+
+  const selectedComparisonMetricLabel = useMemo(() => {
+    const selected = comparisonMetricOptions.find((option) => option.key === activeComparisonMetric);
+    return selected?.label || "";
+  }, [comparisonMetricOptions, activeComparisonMetric]);
+
   const getAggregateComparisonMetricValue = useCallback((row, metricKey) => {
     if (metricKey === "totalCentreCount") return toNumber(row.totalCount);
     if (metricKey === "totalSeatCapacity") return toNumber(row.totalCapacity);
@@ -1478,24 +1496,6 @@ export default function Dashboard() {
       callLogs: sumBy(comparisonRows, (row) => row.callLogs),
     };
   }, [comparisonRows]);
-
-  const comparisonMetricOptions = useMemo(() => {
-    if (!comparisonView) return [];
-    return COMPARISON_METRIC_OPTIONS_BY_VIEW[comparisonView] || [];
-  }, [comparisonView]);
-
-  const activeComparisonMetric = useMemo(() => {
-    if (!comparisonMetricOptions.length) return "";
-    if (selectedComparisonMetric && comparisonMetricOptions.some((option) => option.key === selectedComparisonMetric)) {
-      return selectedComparisonMetric;
-    }
-    return comparisonMetricOptions[0]?.key || "";
-  }, [comparisonMetricOptions, selectedComparisonMetric]);
-
-  const selectedComparisonMetricLabel = useMemo(() => {
-    const selected = comparisonMetricOptions.find((option) => option.key === activeComparisonMetric);
-    return selected?.label || "";
-  }, [comparisonMetricOptions, activeComparisonMetric]);
 
   useEffect(() => {
     if (
