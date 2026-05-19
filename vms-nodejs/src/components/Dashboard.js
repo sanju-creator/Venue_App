@@ -1419,10 +1419,12 @@ export default function Dashboard() {
           : manpowerDrillLevel === "district"
             ? comparisonDistrictData
             : comparisonRegionData;
-    return source.map((row) => ({
-      ...row,
-      value: getAggregateComparisonMetricValue(row, activeComparisonMetric),
-    }));
+    return source
+      .map((row) => ({
+        ...row,
+        value: getAggregateComparisonMetricValue(row, activeComparisonMetric),
+      }))
+      .filter((row) => toNumber(row.value) > 0);
   }, [
     manpowerDrillLevel,
     comparisonRegionData,
@@ -1582,6 +1584,14 @@ export default function Dashboard() {
     comparisonCityLevelData,
     comparisonDistrictData,
   ]);
+
+  const comparisonDrillTableRows = useMemo(
+    () =>
+      comparisonDrillTableConfig.rows.filter(
+        (row) => toNumber(getAggregateComparisonMetricValue(row, activeComparisonMetric)) > 0,
+      ),
+    [comparisonDrillTableConfig.rows, getAggregateComparisonMetricValue, activeComparisonMetric],
+  );
 
   const handleComparisonDrillTableRowClick = useCallback((bucketName) => {
     if (!bucketName) return;
@@ -2910,8 +2920,8 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {comparisonDrillTableConfig.rows.length ? (
-                        comparisonDrillTableConfig.rows.map((row) => (
+                      {comparisonDrillTableRows.length ? (
+                        comparisonDrillTableRows.map((row) => (
                           <tr key={`cmp-drill-row-${manpowerDrillLevel}-${row.name}`}>
                             <td>{renderClickable(row.name, () => handleComparisonDrillTableRowClick(row.name))}</td>
                             <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
