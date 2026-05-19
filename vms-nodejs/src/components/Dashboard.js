@@ -289,20 +289,33 @@ const DATC_DOTC_FILTER_OPTIONS = [
   { key: "DATC", label: "DATC" },
   { key: "DOTC", label: "DOTC" },
 ];
-const COMPARISON_METRIC_OPTIONS = [
-  { key: "totalBatches", label: "Total Batches" },
-  { key: "noDelay", label: "No Delay" },
-  { key: "partialDelay", label: "Partial Delay" },
-  { key: "fullDelay", label: "Full Delay" },
-  { key: "noDelayPercent", label: "No Delay %" },
-  { key: "availableManpower", label: "Available Manpower" },
-  { key: "usedManpower", label: "Used Manpower" },
-  { key: "manpowerUtilizationPercent", label: "Manpower Utilization %" },
-  { key: "totalCentreCount", label: "Venue Count" },
-  { key: "totalSeatCapacity", label: "Seat Capacity" },
-  { key: "ffa", label: "FFA" },
-  { key: "callLogs", label: "Call Logs" },
-];
+const COMPARISON_METRIC_OPTIONS_BY_VIEW = {
+  manpower: [
+    { key: "availableManpower", label: "Available Manpower" },
+    { key: "usedManpower", label: "Used Manpower" },
+    { key: "manpowerUtilizationPercent", label: "Manpower Utilization %" },
+    { key: "totalBatches", label: "Total Batches" },
+    { key: "noDelay", label: "No Delay" },
+    { key: "partialDelay", label: "Partial Delay" },
+    { key: "fullDelay", label: "Full Delay" },
+    { key: "noDelayPercent", label: "No Delay %" },
+  ],
+  venue: [
+    { key: "totalCentreCount", label: "Venue Count" },
+    { key: "totalSeatCapacity", label: "Seat Capacity" },
+    { key: "activeCount", label: "Active Venues" },
+    { key: "inactiveCount", label: "Inactive Venues" },
+    { key: "blacklistedCount", label: "Blacklisted Venues" },
+  ],
+  project: [
+    { key: "totalBatches", label: "Total Batches" },
+    { key: "noDelay", label: "No Delay" },
+    { key: "partialDelay", label: "Partial Delay" },
+    { key: "fullDelay", label: "Full Delay" },
+    { key: "ffa", label: "FFA" },
+    { key: "callLogs", label: "Call Logs" },
+  ],
+};
 
 function sumBy(rows, getter) {
   return rows.reduce((sum, row) => sum + toNumber(getter(row)), 0);
@@ -467,7 +480,6 @@ export default function Dashboard() {
   const [comparisonTypeFilter, setComparisonTypeFilter] = useState("ALL");
   const [comparisonRegion, setComparisonRegion] = useState("");
   const [comparisonState, setComparisonState] = useState("");
-  const [comparisonCityCentre, setComparisonCityCentre] = useState("");
   const [comparisonCity, setComparisonCity] = useState("");
   const [comparisonDistrict, setComparisonDistrict] = useState("");
   const [selectedComparisonMetric, setSelectedComparisonMetric] = useState("");
@@ -1164,7 +1176,6 @@ export default function Dashboard() {
     if (!comparisonRows.some((row) => row.region === comparisonRegion)) {
       setComparisonRegion("");
       setComparisonState("");
-      setComparisonCityCentre("");
       setComparisonCity("");
       setComparisonDistrict("");
       return;
@@ -1174,23 +1185,11 @@ export default function Dashboard() {
       !comparisonRows.some((row) => row.region === comparisonRegion && row.state === comparisonState)
     ) {
       setComparisonState("");
-      setComparisonCityCentre("");
       setComparisonCity("");
       setComparisonDistrict("");
       return;
     }
-    if (
-      comparisonCityCentre &&
-      !comparisonRows.some(
-        (row) =>
-          row.region === comparisonRegion &&
-          row.state === comparisonState &&
-          row.examCityCentre === comparisonCityCentre,
-      )
-    ) {
-      setComparisonCityCentre("");
-    }
-  }, [comparisonRows, comparisonRegion, comparisonState, comparisonCityCentre]);
+  }, [comparisonRows, comparisonRegion, comparisonState]);
 
   useEffect(() => {
     if (!comparisonRegion) {
@@ -1252,6 +1251,9 @@ export default function Dashboard() {
           availableManpower: 0,
           usedManpower: 0,
           totalBatches: 0,
+          noDelay: 0,
+          partialDelay: 0,
+          fullDelay: 0,
           ffa: 0,
           callLogs: 0,
           activeCount: 0,
@@ -1275,6 +1277,9 @@ export default function Dashboard() {
       entry.availableManpower += toNumber(row.manpowerAvailable);
       entry.usedManpower += toNumber(row.manpowerUsed);
       entry.totalBatches += toNumber(row.totalBatches);
+      entry.noDelay += toNumber(row.noDelay);
+      entry.partialDelay += toNumber(row.partialDelay);
+      entry.fullDelay += toNumber(row.fullDelay);
       entry.ffa += toNumber(row.ffa);
       entry.callLogs += toNumber(row.callLogs);
       if (row.status === "ACTIVE") entry.activeCount += 1;
@@ -1309,11 +1314,6 @@ export default function Dashboard() {
     return comparisonStateScopedRows.filter((row) => row.state === comparisonState);
   }, [comparisonStateScopedRows, comparisonState]);
 
-  const comparisonCityData = useMemo(
-    () => aggregateComparisonRows(comparisonCityScopedRows, (row) => row.examCityCentre),
-    [comparisonCityScopedRows, aggregateComparisonRows],
-  );
-
   const comparisonCityLevelData = useMemo(
     () =>
       aggregateComparisonRows(
@@ -1346,31 +1346,79 @@ export default function Dashboard() {
     return "region";
   }, [comparisonRegion, comparisonState, comparisonCity]);
 
+  const comparisonTypeLabel = useMemo(() => {
+    const selected = DATC_DOTC_FILTER_OPTIONS.find((option) => option.key === comparisonTypeFilter);
+    return selected?.label || comparisonTypeFilter;
+  }, [comparisonTypeFilter]);
+
+  const activeComparisonViewLabel = useMemo(() => {
+    const selected = COMPARISON_VIEW_OPTIONS.find((option) => option.key === comparisonView);
+    return selected?.label || "";
+  }, [comparisonView]);
+
+  const getAggregateComparisonMetricValue = useCallback((row, metricKey) => {
+    if (metricKey === "totalCentreCount") return toNumber(row.totalCount);
+    if (metricKey === "totalSeatCapacity") return toNumber(row.totalCapacity);
+    if (metricKey === "availableManpower") return toNumber(row.availableManpower);
+    if (metricKey === "usedManpower") return toNumber(row.usedManpower);
+    if (metricKey === "totalBatches") return toNumber(row.totalBatches);
+    if (metricKey === "noDelay") return toNumber(row.noDelay);
+    if (metricKey === "partialDelay") return toNumber(row.partialDelay);
+    if (metricKey === "fullDelay") return toNumber(row.fullDelay);
+    if (metricKey === "noDelayPercent") return percent(toNumber(row.noDelay), toNumber(row.totalBatches));
+    if (metricKey === "manpowerUtilizationPercent") {
+      return percent(toNumber(row.usedManpower), toNumber(row.availableManpower));
+    }
+    if (metricKey === "ffa") return toNumber(row.ffa);
+    if (metricKey === "callLogs") return toNumber(row.callLogs);
+    if (metricKey === "activeCount") return toNumber(row.activeCount);
+    if (metricKey === "inactiveCount") return toNumber(row.inactiveCount);
+    if (metricKey === "blacklistedCount") return toNumber(row.blacklistedCount);
+    return 0;
+  }, []);
+
   const manpowerDrillChartData = useMemo(() => {
-    if (manpowerDrillLevel === "state") return comparisonStateData;
-    if (manpowerDrillLevel === "city") return comparisonCityLevelData;
-    if (manpowerDrillLevel === "district") return comparisonDistrictData;
-    return comparisonRegionData;
+    const source =
+      manpowerDrillLevel === "state"
+        ? comparisonStateData
+        : manpowerDrillLevel === "city"
+          ? comparisonCityLevelData
+          : manpowerDrillLevel === "district"
+            ? comparisonDistrictData
+            : comparisonRegionData;
+    return source.map((row) => ({
+      ...row,
+      value: getAggregateComparisonMetricValue(row, activeComparisonMetric),
+    }));
   }, [
     manpowerDrillLevel,
     comparisonRegionData,
     comparisonStateData,
     comparisonCityLevelData,
     comparisonDistrictData,
+    getAggregateComparisonMetricValue,
+    activeComparisonMetric,
   ]);
 
   const manpowerDrillChartTitle = useMemo(() => {
-    if (manpowerDrillLevel === "state") {
-      return `State-wise Available vs Used Manpower (${comparisonRegion})`;
-    }
-    if (manpowerDrillLevel === "city") {
-      return `City-wise Available vs Used Manpower (${comparisonState})`;
-    }
-    if (manpowerDrillLevel === "district") {
-      return `District-wise Available vs Used Manpower (${comparisonCity})`;
-    }
-    return "Region-wise Available vs Used Manpower";
-  }, [manpowerDrillLevel, comparisonRegion, comparisonState, comparisonCity]);
+    const levelLabel =
+      manpowerDrillLevel === "state"
+        ? `State-wise (${comparisonRegion})`
+        : manpowerDrillLevel === "city"
+          ? `City-wise (${comparisonState})`
+          : manpowerDrillLevel === "district"
+            ? `District-wise (${comparisonCity})`
+            : "Region-wise";
+    return `${levelLabel} ${selectedComparisonMetricLabel} | ${activeComparisonViewLabel} | ${comparisonTypeLabel}`;
+  }, [
+    manpowerDrillLevel,
+    comparisonRegion,
+    comparisonState,
+    comparisonCity,
+    selectedComparisonMetricLabel,
+    activeComparisonViewLabel,
+    comparisonTypeLabel,
+  ]);
 
   const handleManpowerDrillBarClick = useCallback((entry) => {
     const bucketName = entry?.payload?.name;
@@ -1379,7 +1427,6 @@ export default function Dashboard() {
     if (manpowerDrillLevel === "region") {
       setComparisonRegion((prev) => (prev === bucketName ? "" : bucketName));
       setComparisonState("");
-      setComparisonCityCentre("");
       setComparisonCity("");
       setComparisonDistrict("");
       return;
@@ -1387,7 +1434,6 @@ export default function Dashboard() {
 
     if (manpowerDrillLevel === "state") {
       setComparisonState((prev) => (prev === bucketName ? "" : bucketName));
-      setComparisonCityCentre("");
       setComparisonCity("");
       setComparisonDistrict("");
       return;
@@ -1402,18 +1448,6 @@ export default function Dashboard() {
     setComparisonDistrict((prev) => (prev === bucketName ? "" : bucketName));
   }, [manpowerDrillLevel]);
 
-  const comparisonCentresInScope = useMemo(() => {
-    let scoped = comparisonRows;
-    if (comparisonRegion) scoped = scoped.filter((row) => row.region === comparisonRegion);
-    if (comparisonState) scoped = scoped.filter((row) => row.state === comparisonState);
-    if (comparisonCityCentre) {
-      scoped = scoped.filter((row) => row.examCityCentre === comparisonCityCentre);
-    }
-    return scoped.sort((a, b) =>
-      String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" }),
-    );
-  }, [comparisonRows, comparisonRegion, comparisonState, comparisonCityCentre]);
-
   const comparisonKpis = useMemo(() => {
     const totalCentreCount = comparisonRows.length;
     const totalSeatCapacity = sumBy(comparisonRows, (row) => row.venueMaxCapacity);
@@ -1423,6 +1457,9 @@ export default function Dashboard() {
     const noDelay = sumBy(comparisonRows, (row) => row.noDelay);
     const partialDelay = sumBy(comparisonRows, (row) => row.partialDelay);
     const fullDelay = sumBy(comparisonRows, (row) => row.fullDelay);
+    const activeCount = comparisonRows.filter((row) => row.status === "ACTIVE").length;
+    const inactiveCount = comparisonRows.filter((row) => row.status === "INACTIVE").length;
+    const blacklistedCount = comparisonRows.filter((row) => row.isBlacklisted).length;
     return {
       totalCentreCount,
       totalSeatCapacity,
@@ -1434,51 +1471,48 @@ export default function Dashboard() {
       fullDelay,
       noDelayPercent: percent(noDelay, totalBatches),
       manpowerUtilizationPercent: percent(usedManpower, availableManpower),
+      activeCount,
+      inactiveCount,
+      blacklistedCount,
       ffa: sumBy(comparisonRows, (row) => row.ffa),
       callLogs: sumBy(comparisonRows, (row) => row.callLogs),
     };
   }, [comparisonRows]);
 
+  const comparisonMetricOptions = useMemo(() => {
+    if (!comparisonView) return [];
+    return COMPARISON_METRIC_OPTIONS_BY_VIEW[comparisonView] || [];
+  }, [comparisonView]);
+
+  const activeComparisonMetric = useMemo(() => {
+    if (!comparisonMetricOptions.length) return "";
+    if (selectedComparisonMetric && comparisonMetricOptions.some((option) => option.key === selectedComparisonMetric)) {
+      return selectedComparisonMetric;
+    }
+    return comparisonMetricOptions[0]?.key || "";
+  }, [comparisonMetricOptions, selectedComparisonMetric]);
+
   const selectedComparisonMetricLabel = useMemo(() => {
-    const selected = COMPARISON_METRIC_OPTIONS.find((option) => option.key === selectedComparisonMetric);
+    const selected = comparisonMetricOptions.find((option) => option.key === activeComparisonMetric);
     return selected?.label || "";
-  }, [selectedComparisonMetric]);
+  }, [comparisonMetricOptions, activeComparisonMetric]);
 
   useEffect(() => {
     if (
       selectedComparisonMetric &&
-      !COMPARISON_METRIC_OPTIONS.some((option) => option.key === selectedComparisonMetric)
+      !comparisonMetricOptions.some((option) => option.key === selectedComparisonMetric)
     ) {
       setSelectedComparisonMetric("");
     }
-  }, [selectedComparisonMetric]);
+  }, [selectedComparisonMetric, comparisonMetricOptions]);
 
   useEffect(() => {
-    if (comparisonView === "manpower") {
-      setComparisonCityCentre("");
-      return;
-    }
+    setComparisonRegion("");
+    setComparisonState("");
     setComparisonCity("");
     setComparisonDistrict("");
+    setSelectedComparisonMetric("");
   }, [comparisonView]);
-
-  const getComparisonMetricValue = useCallback((row, metricKey) => {
-    if (metricKey === "totalBatches") return toNumber(row.totalBatches);
-    if (metricKey === "noDelay") return toNumber(row.noDelay);
-    if (metricKey === "partialDelay") return toNumber(row.partialDelay);
-    if (metricKey === "fullDelay") return toNumber(row.fullDelay);
-    if (metricKey === "noDelayPercent") return percent(toNumber(row.noDelay), toNumber(row.totalBatches));
-    if (metricKey === "availableManpower") return toNumber(row.manpowerAvailable);
-    if (metricKey === "usedManpower") return toNumber(row.manpowerUsed);
-    if (metricKey === "manpowerUtilizationPercent") {
-      return percent(toNumber(row.manpowerUsed), toNumber(row.manpowerAvailable));
-    }
-    if (metricKey === "totalCentreCount") return 1;
-    if (metricKey === "totalSeatCapacity") return toNumber(row.venueMaxCapacity);
-    if (metricKey === "ffa") return toNumber(row.ffa);
-    if (metricKey === "callLogs") return toNumber(row.callLogs);
-    return 0;
-  }, []);
 
   const formatComparisonMetricValue = useCallback((metricKey, metricValue) => {
     if (metricKey === "noDelayPercent" || metricKey === "manpowerUtilizationPercent") {
@@ -1488,116 +1522,11 @@ export default function Dashboard() {
   }, []);
 
   const selectedComparisonMetricTotal = useMemo(() => {
-    if (!selectedComparisonMetric) return "";
-    const totalValue = comparisonKpis[selectedComparisonMetric];
+    if (!activeComparisonMetric) return "";
+    const totalValue = comparisonKpis[activeComparisonMetric];
     if (totalValue === undefined || totalValue === null) return "";
-    return formatComparisonMetricValue(selectedComparisonMetric, totalValue);
-  }, [selectedComparisonMetric, comparisonKpis, formatComparisonMetricValue]);
-
-  const comparisonMetricDetail = useMemo(() => {
-    const baseRows = comparisonCentresInScope;
-    if (!selectedComparisonMetric) {
-      return { title: "", rows: [] };
-    }
-    const sortBySelectedMetric = (rows) =>
-      [...rows].sort(
-        (a, b) =>
-          getComparisonMetricValue(b, selectedComparisonMetric) -
-          getComparisonMetricValue(a, selectedComparisonMetric),
-      );
-
-    if (selectedComparisonMetric === "totalCentreCount") {
-      return { title: "Venue Count Details", rows: baseRows };
-    }
-    if (selectedComparisonMetric === "totalSeatCapacity") {
-      return {
-        title: "Seat Capacity Details",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.venueMaxCapacity) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "availableManpower") {
-      return {
-        title: "Available Manpower Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.manpowerAvailable) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "usedManpower") {
-      return {
-        title: "Used Manpower Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.manpowerUsed) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "totalBatches") {
-      return {
-        title: "Total Batches Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.totalBatches) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "noDelay") {
-      return {
-        title: "No Delay Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.noDelay) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "partialDelay") {
-      return {
-        title: "Partial Delay Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.partialDelay) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "fullDelay") {
-      return {
-        title: "Full Delay Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.fullDelay) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "noDelayPercent") {
-      return {
-        title: "No Delay % Comparison",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.totalBatches) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "manpowerUtilizationPercent") {
-      return {
-        title: "Manpower Utilization % Comparison",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.manpowerAvailable) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "ffa") {
-      return {
-        title: "FFA Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.ffa) > 0)),
-      };
-    }
-    if (selectedComparisonMetric === "callLogs") {
-      return {
-        title: "Call Logs Centres",
-        rows: sortBySelectedMetric(baseRows.filter((row) => toNumber(row.callLogs) > 0)),
-      };
-    }
-    return { title: "", rows: [] };
-  }, [comparisonCentresInScope, selectedComparisonMetric, getComparisonMetricValue]);
-
-  const comparisonFinalRows = selectedComparisonMetric
-    ? comparisonMetricDetail.rows
-    : comparisonCentresInScope;
-
-  const manpowerFinalRows = useMemo(() => {
-    let scoped = comparisonFinalRows;
-    if (comparisonRegion) scoped = scoped.filter((row) => row.region === comparisonRegion);
-    if (comparisonState) scoped = scoped.filter((row) => row.state === comparisonState);
-    if (comparisonCity) {
-      scoped = scoped.filter((row) => (String(row.city || "").trim() || "-") === comparisonCity);
-    }
-    if (comparisonDistrict) {
-      scoped = scoped.filter((row) => (String(row.district || "").trim() || "-") === comparisonDistrict);
-    }
-    return scoped;
-  }, [comparisonFinalRows, comparisonRegion, comparisonState, comparisonCity, comparisonDistrict]);
-
-  const comparisonFinalTitle = selectedComparisonMetric
-    ? comparisonMetricDetail.title
-    : "Centre/Venue List";
+    return formatComparisonMetricValue(activeComparisonMetric, totalValue);
+  }, [activeComparisonMetric, comparisonKpis, formatComparisonMetricValue]);
 
   const manpowerRegionComparisonData = useMemo(() => {
     const sourceRows = Array.isArray(manpowerSnapshot?.manpowerWiseSummary)
@@ -2772,7 +2701,10 @@ export default function Dashboard() {
         <div className="section-full comparison-analytics-shell">
           <div className="comparison-ribbon">
             <div className="comparison-ribbon-left">
-              <h2>Comparison Analytics</h2>
+              <h2>
+                Comparison Analytics
+                {comparisonView ? ` - ${activeComparisonViewLabel} (${comparisonTypeLabel})` : ""}
+              </h2>
               <p>Choose module from right. Section opens only after selection.</p>
             </div>
             <div className="comparison-ribbon-right">
@@ -2780,7 +2712,7 @@ export default function Dashboard() {
                 <button
                   key={option.key}
                   className={`comparison-view-btn ${comparisonView === option.key ? "active" : ""}`}
-                  onClick={() => setComparisonView((prev) => (prev === option.key ? null : option.key))}
+                  onClick={() => setComparisonView(option.key)}
                 >
                   {option.label}
                 </button>
@@ -2794,7 +2726,6 @@ export default function Dashboard() {
                       setComparisonTypeFilter(option.key);
                       setComparisonRegion("");
                       setComparisonState("");
-                      setComparisonCityCentre("");
                       setComparisonCity("");
                       setComparisonDistrict("");
                       setSelectedComparisonMetric("");
@@ -2813,21 +2744,19 @@ export default function Dashboard() {
               <select
                 id="comparison-metric-select"
                 className="comparison-metric-select"
-                value={selectedComparisonMetric}
+                value={activeComparisonMetric}
                 onChange={(event) => setSelectedComparisonMetric(event.target.value)}
-                disabled={!comparisonView}
+                disabled={!comparisonMetricOptions.length}
               >
-                <option value="">
-                  {comparisonView ? "All Metrics" : "Select module first"}
-                </option>
-                {COMPARISON_METRIC_OPTIONS.map((option) => (
+                {!comparisonView ? <option value="">Select module first</option> : null}
+                {comparisonMetricOptions.map((option) => (
                   <option key={`metric-${option.key}`} value={option.key}>
                     {option.label}
                   </option>
                 ))}
               </select>
             </div>
-            {selectedComparisonMetric && comparisonView ? (
+            {activeComparisonMetric && comparisonView ? (
               <div className="comparison-metric-total">
                 <span>{selectedComparisonMetricLabel}</span>
                 <strong>{selectedComparisonMetricTotal}</strong>
@@ -2835,262 +2764,29 @@ export default function Dashboard() {
             ) : null}
           </div>
 
-          {comparisonView === "venue" ? (
+          {comparisonView ? (
             <div className="comparison-expand-panel">
               <div className="comparison-drilldown-path">
-                <span>Flow: Region -&gt; State -&gt; City/District -&gt; Centre/Venue List</span>
+                <span>Flow: Region -&gt; State -&gt; City -&gt; District</span>
                 <div className="comparison-drilldown-actions">
-                  <button className="btn-outline btn-outline--small" onClick={() => { setComparisonRegion(""); setComparisonState(""); setComparisonCityCentre(""); }}>
+                  <button
+                    className="btn-outline btn-outline--small"
+                    onClick={() => {
+                      setComparisonRegion("");
+                      setComparisonState("");
+                      setComparisonCity("");
+                      setComparisonDistrict("");
+                    }}
+                  >
                     Reset Drilldown
                   </button>
-                  {comparisonRegion ? <span className="comparison-chip">Region: {comparisonRegion}</span> : null}
-                  {comparisonState ? <span className="comparison-chip">State: {comparisonState}</span> : null}
-                  {comparisonCityCentre ? <span className="comparison-chip">City/District: {comparisonCityCentre}</span> : null}
-                  {selectedComparisonMetric ? <span className="comparison-chip">Metric: {selectedComparisonMetricLabel}</span> : null}
-                </div>
-              </div>
-
-              <div className="col-2-grid operational-grid comparison-grid">
-                <div className="operational-panel">
-                  <div className="chart-title">Region-wise DATC vs DOTC</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonRegionData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      {showDatcSeries ? (
-                        <Bar dataKey="DATC" fill={COMPARISON_COLORS.datc} minPointSize={6} onClick={(entry) => {
-                          const regionName = entry?.payload?.name;
-                          if (!regionName) return;
-                          setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                          setComparisonState("");
-                          setComparisonCityCentre("");
-                        }} />
-                      ) : null}
-                      {showDotcSeries ? (
-                        <Bar dataKey="DOTC" fill={COMPARISON_COLORS.dotc} minPointSize={6} onClick={(entry) => {
-                          const regionName = entry?.payload?.name;
-                          if (!regionName) return;
-                          setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                          setComparisonState("");
-                          setComparisonCityCentre("");
-                        }} />
-                      ) : null}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="operational-panel">
-                  <div className="chart-title">State-wise DATC vs DOTC</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonStateData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      {showDatcSeries ? (
-                        <Bar dataKey="DATC" fill={COMPARISON_COLORS.datc} minPointSize={5} onClick={(entry) => {
-                          const stateName = entry?.payload?.name;
-                          if (!stateName) return;
-                          setComparisonState((prev) => (prev === stateName ? "" : stateName));
-                          setComparisonCityCentre("");
-                        }} />
-                      ) : null}
-                      {showDotcSeries ? (
-                        <Bar dataKey="DOTC" fill={COMPARISON_COLORS.dotc} minPointSize={5} onClick={(entry) => {
-                          const stateName = entry?.payload?.name;
-                          if (!stateName) return;
-                          setComparisonState((prev) => (prev === stateName ? "" : stateName));
-                          setComparisonCityCentre("");
-                        }} />
-                      ) : null}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="operational-panel">
-                  <div className="chart-title">City/District-wise Centre Count</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonCityData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 10 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="totalCount" fill="#3f7fdd" minPointSize={5} onClick={(entry) => {
-                        const cityLabel = entry?.payload?.name;
-                        if (!cityLabel) return;
-                        setComparisonCityCentre((prev) => (prev === cityLabel ? "" : cityLabel));
-                      }} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="operational-panel">
-                  <div className="chart-title">Seat Capacity Comparison</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonRegionData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      {showDatcSeries ? (
-                        <Bar dataKey="datcCapacity" name="DATC Capacity" fill={COMPARISON_COLORS.datcStrong} minPointSize={5} onClick={(entry) => {
-                          const regionName = entry?.payload?.name;
-                          if (!regionName) return;
-                          setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                          setComparisonState("");
-                          setComparisonCityCentre("");
-                        }} />
-                      ) : null}
-                      {showDotcSeries ? (
-                        <Bar dataKey="dotcCapacity" name="DOTC Capacity" fill={COMPARISON_COLORS.dotcStrong} minPointSize={5} onClick={(entry) => {
-                          const regionName = entry?.payload?.name;
-                          if (!regionName) return;
-                          setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                          setComparisonState("");
-                          setComparisonCityCentre("");
-                        }} />
-                      ) : null}
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="operational-panel">
-                  <div className="chart-title">Available vs Used Manpower</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonRegionData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="availableManpower" name="Available Manpower" fill={COMPARISON_COLORS.availableManpower} minPointSize={5} onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="usedManpower" name="Used Manpower" fill={COMPARISON_COLORS.usedManpower} minPointSize={5} onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="operational-panel">
-                  <div className="chart-title">Active/Inactive/Blacklisted Status</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonRegionData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="activeCount" name="Active" fill={COMPARISON_COLORS.active} stackId="status" onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="inactiveCount" name="Inactive" fill={COMPARISON_COLORS.inactive} stackId="status" onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="blacklistedCount" name="Blacklisted" fill={COMPARISON_COLORS.blacklisted} stackId="status" onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {!comparisonCityCentre ? (
-                <div className="comparison-drilldown-hint">
-                  Drill down Region -&gt; State -&gt; City/District to unlock final centre table.
-                </div>
-              ) : (
-                <div className="section-full">
-                  <h3 className="summary-subtitle">{comparisonFinalTitle}</h3>
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Centre / Venue</th>
-                          <th>DMS Code</th>
-                          <th>Region</th>
-                          <th>State</th>
-                          <th>City / District</th>
-                          <th>Type</th>
-                          <th>Status</th>
-                          <th>Seat Capacity</th>
-                          <th>Available MP</th>
-                          <th>Used MP</th>
-                          <th>Total Batches</th>
-                          <th>FFA</th>
-                          <th>Call Logs</th>
-                          {selectedComparisonMetric ? <th>{selectedComparisonMetricLabel}</th> : null}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {comparisonFinalRows.length ? (
-                          comparisonFinalRows.map((row) => (
-                            <tr key={row.dmsCode}>
-                              <td>{renderClickable(row.name || "-", () => openVenueDetail(row.dmsCode))}</td>
-                              <td>{row.dmsCode}</td>
-                              <td>{row.region}</td>
-                              <td>{row.state}</td>
-                              <td>{row.examCityCentre}</td>
-                              <td>{row.venueType}</td>
-                              <td>{row.status}</td>
-                              <td>{formatCount(row.venueMaxCapacity)}</td>
-                              <td>{formatCount(row.manpowerAvailable)}</td>
-                              <td>{formatCount(row.manpowerUsed)}</td>
-                              <td>{formatCount(row.totalBatches)}</td>
-                              <td>{formatCount(row.ffa)}</td>
-                              <td>{formatCount(row.callLogs)}</td>
-                              {selectedComparisonMetric ? (
-                                <td>{formatComparisonMetricValue(selectedComparisonMetric, getComparisonMetricValue(row, selectedComparisonMetric))}</td>
-                              ) : null}
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={selectedComparisonMetric ? 14 : 13}>No rows found for selected filters/metric.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {comparisonView === "manpower" ? (
-            <div className="comparison-expand-panel">
-              <div className="comparison-drilldown-path">
-                <span>Flow: Region -&gt; State -&gt; City -&gt; District -&gt; Centre/Venue List</span>
-                <div className="comparison-drilldown-actions">
-                  <button className="btn-outline btn-outline--small" onClick={() => { setComparisonRegion(""); setComparisonState(""); setComparisonCityCentre(""); setComparisonCity(""); setComparisonDistrict(""); }}>
-                    Reset Drilldown
-                  </button>
+                  <span className="comparison-chip">View: {activeComparisonViewLabel || "-"}</span>
+                  <span className="comparison-chip">Type: {comparisonTypeLabel}</span>
                   {comparisonRegion ? <span className="comparison-chip">Region: {comparisonRegion}</span> : null}
                   {comparisonState ? <span className="comparison-chip">State: {comparisonState}</span> : null}
                   {comparisonCity ? <span className="comparison-chip">City: {comparisonCity}</span> : null}
                   {comparisonDistrict ? <span className="comparison-chip">District: {comparisonDistrict}</span> : null}
-                  {selectedComparisonMetric ? <span className="comparison-chip">Metric: {selectedComparisonMetricLabel}</span> : null}
+                  {selectedComparisonMetricLabel ? <span className="comparison-chip">Metric: {selectedComparisonMetricLabel}</span> : null}
                 </div>
               </div>
 
@@ -3098,53 +2794,43 @@ export default function Dashboard() {
                 <div className="operational-panel comparison-panel--full">
                   <div className="chart-title">{manpowerDrillChartTitle}</div>
                   <ResponsiveContainer width="100%" height={280}>
-                    <BarChart key={`mp-drill-${manpowerDrillLevel}`} data={manpowerDrillChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
+                    <BarChart key={`comparison-drill-${comparisonView}-${manpowerDrillLevel}-${activeComparisonMetric}`} data={manpowerDrillChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                       <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: manpowerDrillLevel === "region" ? 12 : 10 }} />
                       <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="availableManpower" name="Available" fill={COMPARISON_COLORS.availableManpower} minPointSize={5} onClick={handleManpowerDrillBarClick} />
-                      <Bar dataKey="usedManpower" name="Used" fill={COMPARISON_COLORS.usedManpower} minPointSize={5} onClick={handleManpowerDrillBarClick} />
+                      <RechartsTooltip formatter={(value) => formatComparisonMetricValue(activeComparisonMetric, value)} />
+                      <Bar dataKey="value" name={selectedComparisonMetricLabel} fill="#3f7fdd" minPointSize={5} onClick={handleManpowerDrillBarClick} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               <div className="section-full comparison-region-summary-table">
-                <h3 className="summary-subtitle">Region-wise Available vs Used Manpower (Table)</h3>
+                <h3 className="summary-subtitle">Region-wise {selectedComparisonMetricLabel}</h3>
                 <div className="table-wrap">
                   <table className="data-table">
                     <thead>
                       <tr>
                         <th>Region</th>
-                        <th>Available MP</th>
-                        <th>Used MP</th>
-                        <th>Utilization %</th>
+                        <th>{selectedComparisonMetricLabel}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {comparisonRegionData.length ? (
-                        comparisonRegionData.map((row) => {
-                          const available = toNumber(row.availableManpower);
-                          const used = toNumber(row.usedManpower);
-                          return (
-                            <tr key={`mp-region-row-${row.name}`}>
-                              <td>{renderClickable(row.name, () => {
-                                setComparisonRegion((prev) => (prev === row.name ? "" : row.name));
-                                setComparisonState("");
-                                setComparisonCityCentre("");
-                                setComparisonCity("");
-                                setComparisonDistrict("");
-                              })}</td>
-                              <td>{formatCount(available)}</td>
-                              <td>{formatCount(used)}</td>
-                              <td>{`${percent(used, available).toFixed(1)}%`}</td>
-                            </tr>
-                          );
-                        })
+                        comparisonRegionData.map((row) => (
+                          <tr key={`cmp-region-row-${row.name}`}>
+                            <td>{renderClickable(row.name, () => {
+                              setComparisonRegion((prev) => (prev === row.name ? "" : row.name));
+                              setComparisonState("");
+                              setComparisonCity("");
+                              setComparisonDistrict("");
+                            })}</td>
+                            <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
+                          </tr>
+                        ))
                       ) : (
                         <tr>
-                          <td colSpan={4}>No region data found for selected filters.</td>
+                          <td colSpan={2}>No region data found for selected filters.</td>
                         </tr>
                       )}
                     </tbody>
@@ -3154,39 +2840,30 @@ export default function Dashboard() {
 
               {comparisonRegion ? (
                 <div className="section-full comparison-region-summary-table">
-                  <h3 className="summary-subtitle">State-wise Available vs Used Manpower</h3>
+                  <h3 className="summary-subtitle">State-wise {selectedComparisonMetricLabel}</h3>
                   <div className="table-wrap">
                     <table className="data-table">
                       <thead>
                         <tr>
                           <th>State</th>
-                          <th>Available MP</th>
-                          <th>Used MP</th>
-                          <th>Utilization %</th>
+                          <th>{selectedComparisonMetricLabel}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {comparisonStateData.length ? (
-                          comparisonStateData.map((row) => {
-                            const available = toNumber(row.availableManpower);
-                            const used = toNumber(row.usedManpower);
-                            return (
-                              <tr key={`mp-state-row-${row.name}`}>
-                                <td>{renderClickable(row.name, () => {
-                                  setComparisonState((prev) => (prev === row.name ? "" : row.name));
-                                  setComparisonCityCentre("");
-                                  setComparisonCity("");
-                                  setComparisonDistrict("");
-                                })}</td>
-                                <td>{formatCount(available)}</td>
-                                <td>{formatCount(used)}</td>
-                                <td>{`${percent(used, available).toFixed(1)}%`}</td>
-                              </tr>
-                            );
-                          })
+                          comparisonStateData.map((row) => (
+                            <tr key={`cmp-state-row-${row.name}`}>
+                              <td>{renderClickable(row.name, () => {
+                                setComparisonState((prev) => (prev === row.name ? "" : row.name));
+                                setComparisonCity("");
+                                setComparisonDistrict("");
+                              })}</td>
+                              <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
+                            </tr>
+                          ))
                         ) : (
                           <tr>
-                            <td colSpan={4}>No state data found for selected region.</td>
+                            <td colSpan={2}>No state data found for selected region.</td>
                           </tr>
                         )}
                       </tbody>
@@ -3197,37 +2874,29 @@ export default function Dashboard() {
 
               {comparisonState ? (
                 <div className="section-full comparison-region-summary-table">
-                  <h3 className="summary-subtitle">City-wise Available vs Used Manpower</h3>
+                  <h3 className="summary-subtitle">City-wise {selectedComparisonMetricLabel}</h3>
                   <div className="table-wrap">
                     <table className="data-table">
                       <thead>
                         <tr>
                           <th>City</th>
-                          <th>Available MP</th>
-                          <th>Used MP</th>
-                          <th>Utilization %</th>
+                          <th>{selectedComparisonMetricLabel}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {comparisonCityLevelData.length ? (
-                          comparisonCityLevelData.map((row) => {
-                            const available = toNumber(row.availableManpower);
-                            const used = toNumber(row.usedManpower);
-                            return (
-                              <tr key={`mp-city-row-${row.name}`}>
-                                <td>{renderClickable(row.name, () => {
-                                  setComparisonCity((prev) => (prev === row.name ? "" : row.name));
-                                  setComparisonDistrict("");
-                                })}</td>
-                                <td>{formatCount(available)}</td>
-                                <td>{formatCount(used)}</td>
-                                <td>{`${percent(used, available).toFixed(1)}%`}</td>
-                              </tr>
-                            );
-                          })
+                          comparisonCityLevelData.map((row) => (
+                            <tr key={`cmp-city-row-${row.name}`}>
+                              <td>{renderClickable(row.name, () => {
+                                setComparisonCity((prev) => (prev === row.name ? "" : row.name));
+                                setComparisonDistrict("");
+                              })}</td>
+                              <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
+                            </tr>
+                          ))
                         ) : (
                           <tr>
-                            <td colSpan={4}>No city data found for selected state.</td>
+                            <td colSpan={2}>No city data found for selected state.</td>
                           </tr>
                         )}
                       </tbody>
@@ -3238,34 +2907,26 @@ export default function Dashboard() {
 
               {comparisonCity ? (
                 <div className="section-full comparison-region-summary-table">
-                  <h3 className="summary-subtitle">District-wise Available vs Used Manpower</h3>
+                  <h3 className="summary-subtitle">District-wise {selectedComparisonMetricLabel}</h3>
                   <div className="table-wrap">
                     <table className="data-table">
                       <thead>
                         <tr>
                           <th>District</th>
-                          <th>Available MP</th>
-                          <th>Used MP</th>
-                          <th>Utilization %</th>
+                          <th>{selectedComparisonMetricLabel}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {comparisonDistrictData.length ? (
-                          comparisonDistrictData.map((row) => {
-                            const available = toNumber(row.availableManpower);
-                            const used = toNumber(row.usedManpower);
-                            return (
-                              <tr key={`mp-district-row-${row.name}`}>
-                                <td>{renderClickable(row.name, () => setComparisonDistrict((prev) => (prev === row.name ? "" : row.name)))}</td>
-                                <td>{formatCount(available)}</td>
-                                <td>{formatCount(used)}</td>
-                                <td>{`${percent(used, available).toFixed(1)}%`}</td>
-                              </tr>
-                            );
-                          })
+                          comparisonDistrictData.map((row) => (
+                            <tr key={`cmp-district-row-${row.name}`}>
+                              <td>{renderClickable(row.name, () => setComparisonDistrict((prev) => (prev === row.name ? "" : row.name)))}</td>
+                              <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
+                            </tr>
+                          ))
                         ) : (
                           <tr>
-                            <td colSpan={4}>No district data found for selected city.</td>
+                            <td colSpan={2}>No district data found for selected city.</td>
                           </tr>
                         )}
                       </tbody>
@@ -3273,215 +2934,6 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : null}
-
-              <div className="section-full">
-                <h3 className="summary-subtitle">{selectedComparisonMetric ? comparisonFinalTitle : "Manpower Drilldown Centre List"}</h3>
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Centre / Venue</th>
-                        <th>DMS Code</th>
-                        <th>Region</th>
-                        <th>State</th>
-                        <th>City / District</th>
-                        <th>Type</th>
-                        <th>Available MP</th>
-                        <th>Used MP</th>
-                        <th>Total Batches</th>
-                        <th>FFA</th>
-                        <th>Call Logs</th>
-                        {selectedComparisonMetric ? <th>{selectedComparisonMetricLabel}</th> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {manpowerFinalRows.length ? (
-                        manpowerFinalRows.map((row) => (
-                          <tr key={`mp-drill-${row.dmsCode}`}>
-                            <td>{renderClickable(row.name || "-", () => openVenueDetail(row.dmsCode))}</td>
-                            <td>{row.dmsCode}</td>
-                            <td>{row.region}</td>
-                            <td>{row.state}</td>
-                            <td>{row.examCityCentre}</td>
-                            <td>{row.venueType}</td>
-                            <td>{formatCount(row.manpowerAvailable)}</td>
-                            <td>{formatCount(row.manpowerUsed)}</td>
-                            <td>{formatCount(row.totalBatches)}</td>
-                            <td>{formatCount(row.ffa)}</td>
-                            <td>{formatCount(row.callLogs)}</td>
-                            {selectedComparisonMetric ? (
-                              <td>{formatComparisonMetricValue(selectedComparisonMetric, getComparisonMetricValue(row, selectedComparisonMetric))}</td>
-                            ) : null}
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={selectedComparisonMetric ? 12 : 11}>No rows found for selected filters/metric.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {comparisonView === "project" ? (
-            <div className="comparison-expand-panel">
-              <div className="comparison-drilldown-path">
-                <span>Flow: Region -&gt; State -&gt; City/District -&gt; Centre/Venue List</span>
-                <div className="comparison-drilldown-actions">
-                  <button className="btn-outline btn-outline--small" onClick={() => { setComparisonRegion(""); setComparisonState(""); setComparisonCityCentre(""); }}>
-                    Reset Drilldown
-                  </button>
-                  {comparisonRegion ? <span className="comparison-chip">Region: {comparisonRegion}</span> : null}
-                  {comparisonState ? <span className="comparison-chip">State: {comparisonState}</span> : null}
-                  {comparisonCityCentre ? <span className="comparison-chip">City/District: {comparisonCityCentre}</span> : null}
-                  {selectedComparisonMetric ? <span className="comparison-chip">Metric: {selectedComparisonMetricLabel}</span> : null}
-                </div>
-              </div>
-
-              <div className="col-2-grid operational-grid comparison-grid">
-                <div className="operational-panel">
-                  <div className="chart-title">Region-wise Project Delivery Metrics</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonRegionData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="totalBatches" name="Total Batches" fill={COMPARISON_COLORS.projectTotalBatches} minPointSize={5} onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="ffa" name="FFA" fill="#f59e0b" minPointSize={5} onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="callLogs" name="Call Logs" fill="#ef4444" minPointSize={5} onClick={(entry) => {
-                        const regionName = entry?.payload?.name;
-                        if (!regionName) return;
-                        setComparisonRegion((prev) => (prev === regionName ? "" : regionName));
-                        setComparisonState("");
-                        setComparisonCityCentre("");
-                      }} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="operational-panel">
-                  <div className="chart-title">State-wise Project Delivery Metrics</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonStateData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 11 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="totalBatches" name="Total Batches" fill={COMPARISON_COLORS.projectTotalBatches} minPointSize={5} onClick={(entry) => {
-                        const stateName = entry?.payload?.name;
-                        if (!stateName) return;
-                        setComparisonState((prev) => (prev === stateName ? "" : stateName));
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="ffa" name="FFA" fill="#f59e0b" minPointSize={5} onClick={(entry) => {
-                        const stateName = entry?.payload?.name;
-                        if (!stateName) return;
-                        setComparisonState((prev) => (prev === stateName ? "" : stateName));
-                        setComparisonCityCentre("");
-                      }} />
-                      <Bar dataKey="callLogs" name="Call Logs" fill="#ef4444" minPointSize={5} onClick={(entry) => {
-                        const stateName = entry?.payload?.name;
-                        if (!stateName) return;
-                        setComparisonState((prev) => (prev === stateName ? "" : stateName));
-                        setComparisonCityCentre("");
-                      }} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="operational-panel">
-                  <div className="chart-title">City/District-wise Project Delivery Metrics</div>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={comparisonCityData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                      <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 10 }} />
-                      <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                      <RechartsTooltip formatter={(value) => formatCount(value)} />
-                      <Bar dataKey="totalBatches" name="Total Batches" fill={COMPARISON_COLORS.projectTotalBatches} minPointSize={5} onClick={(entry) => {
-                        const cityLabel = entry?.payload?.name;
-                        if (!cityLabel) return;
-                        setComparisonCityCentre((prev) => (prev === cityLabel ? "" : cityLabel));
-                      }} />
-                      <Bar dataKey="ffa" name="FFA" fill="#f59e0b" minPointSize={5} onClick={(entry) => {
-                        const cityLabel = entry?.payload?.name;
-                        if (!cityLabel) return;
-                        setComparisonCityCentre((prev) => (prev === cityLabel ? "" : cityLabel));
-                      }} />
-                      <Bar dataKey="callLogs" name="Call Logs" fill="#ef4444" minPointSize={5} onClick={(entry) => {
-                        const cityLabel = entry?.payload?.name;
-                        if (!cityLabel) return;
-                        setComparisonCityCentre((prev) => (prev === cityLabel ? "" : cityLabel));
-                      }} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {!comparisonCityCentre ? (
-                <div className="comparison-drilldown-hint">
-                  Drill down Region -&gt; State -&gt; City/District to unlock final centre table.
-                </div>
-              ) : (
-                <div className="section-full">
-                  <h3 className="summary-subtitle">{selectedComparisonMetric ? comparisonFinalTitle : "Project Drilldown Centre List"}</h3>
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Centre / Venue</th>
-                          <th>DMS Code</th>
-                          <th>Region</th>
-                          <th>State</th>
-                          <th>City / District</th>
-                          <th>Type</th>
-                          <th>Total Batches</th>
-                          <th>FFA</th>
-                          <th>Call Logs</th>
-                          {selectedComparisonMetric ? <th>{selectedComparisonMetricLabel}</th> : null}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {comparisonFinalRows.length ? (
-                          comparisonFinalRows.map((row) => (
-                            <tr key={`proj-drill-${row.dmsCode}`}>
-                              <td>{renderClickable(row.name || "-", () => openVenueDetail(row.dmsCode))}</td>
-                              <td>{row.dmsCode}</td>
-                              <td>{row.region}</td>
-                              <td>{row.state}</td>
-                              <td>{row.examCityCentre}</td>
-                              <td>{row.venueType}</td>
-                              <td>{formatCount(row.totalBatches)}</td>
-                              <td>{formatCount(row.ffa)}</td>
-                              <td>{formatCount(row.callLogs)}</td>
-                              {selectedComparisonMetric ? (
-                                <td>{formatComparisonMetricValue(selectedComparisonMetric, getComparisonMetricValue(row, selectedComparisonMetric))}</td>
-                              ) : null}
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={selectedComparisonMetric ? 10 : 9}>No rows found for selected filters/metric.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </div>
           ) : null}
         </div>
