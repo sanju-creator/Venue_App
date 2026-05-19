@@ -1368,20 +1368,16 @@ export default function Dashboard() {
 
   const comparisonMetricOptions = useMemo(() => {
     if (!effectiveComparisonView) return [];
-    if (isVenueTypeOnlyMode) {
-      return [{ key: "totalCentreCount", label: "Venue Count" }];
-    }
     return COMPARISON_METRIC_OPTIONS_BY_VIEW[effectiveComparisonView] || [];
-  }, [effectiveComparisonView, isVenueTypeOnlyMode]);
+  }, [effectiveComparisonView]);
 
   const activeComparisonMetric = useMemo(() => {
-    if (isVenueTypeOnlyMode) return "totalCentreCount";
     if (!comparisonMetricOptions.length) return "";
     if (selectedComparisonMetric && comparisonMetricOptions.some((option) => option.key === selectedComparisonMetric)) {
       return selectedComparisonMetric;
     }
     return comparisonMetricOptions[0]?.key || "";
-  }, [isVenueTypeOnlyMode, comparisonMetricOptions, selectedComparisonMetric]);
+  }, [comparisonMetricOptions, selectedComparisonMetric]);
 
   const selectedComparisonMetricLabel = useMemo(() => {
     const selected = comparisonMetricOptions.find((option) => option.key === activeComparisonMetric);
@@ -2772,7 +2768,7 @@ export default function Dashboard() {
                 className="comparison-metric-select"
                 value={activeComparisonMetric}
                 onChange={(event) => setSelectedComparisonMetric(event.target.value)}
-                disabled={!comparisonMetricOptions.length || isVenueTypeOnlyMode}
+                disabled={!comparisonMetricOptions.length}
               >
                 {!effectiveComparisonView ? <option value="">Select module first</option> : null}
                 {comparisonMetricOptions.map((option) => (
