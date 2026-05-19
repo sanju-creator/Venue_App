@@ -1218,6 +1218,17 @@ export default function Dashboard() {
           DATC: 0,
           DOTC: 0,
           totalCount: 0,
+          venuesWithSeatCapacity: 0,
+          venuesWithAvailableManpower: 0,
+          venuesWithUsedManpower: 0,
+          venuesWithTotalBatches: 0,
+          venuesWithNoDelay: 0,
+          venuesWithPartialDelay: 0,
+          venuesWithFullDelay: 0,
+          venuesWithNoDelayPercent: 0,
+          venuesWithManpowerUtilizationPercent: 0,
+          venuesWithFfa: 0,
+          venuesWithCallLogs: 0,
           datcCapacity: 0,
           dotcCapacity: 0,
           totalCapacity: 0,
@@ -1246,15 +1257,35 @@ export default function Dashboard() {
         entry.dotcCapacity += toNumber(row.venueMaxCapacity);
       }
       entry.totalCount += 1;
-      entry.totalCapacity += toNumber(row.venueMaxCapacity);
-      entry.availableManpower += toNumber(row.manpowerAvailable);
-      entry.usedManpower += toNumber(row.manpowerUsed);
-      entry.totalBatches += toNumber(row.totalBatches);
-      entry.noDelay += toNumber(row.noDelay);
-      entry.partialDelay += toNumber(row.partialDelay);
-      entry.fullDelay += toNumber(row.fullDelay);
-      entry.ffa += toNumber(row.ffa);
-      entry.callLogs += toNumber(row.callLogs);
+      const seatCapacity = toNumber(row.venueMaxCapacity);
+      const availableMp = toNumber(row.manpowerAvailable);
+      const usedMp = toNumber(row.manpowerUsed);
+      const totalBatches = toNumber(row.totalBatches);
+      const noDelay = toNumber(row.noDelay);
+      const partialDelay = toNumber(row.partialDelay);
+      const fullDelay = toNumber(row.fullDelay);
+      const ffa = toNumber(row.ffa);
+      const callLogs = toNumber(row.callLogs);
+      entry.totalCapacity += seatCapacity;
+      entry.availableManpower += availableMp;
+      entry.usedManpower += usedMp;
+      entry.totalBatches += totalBatches;
+      entry.noDelay += noDelay;
+      entry.partialDelay += partialDelay;
+      entry.fullDelay += fullDelay;
+      entry.ffa += ffa;
+      entry.callLogs += callLogs;
+      if (seatCapacity > 0) entry.venuesWithSeatCapacity += 1;
+      if (availableMp > 0) entry.venuesWithAvailableManpower += 1;
+      if (usedMp > 0) entry.venuesWithUsedManpower += 1;
+      if (totalBatches > 0) entry.venuesWithTotalBatches += 1;
+      if (noDelay > 0) entry.venuesWithNoDelay += 1;
+      if (partialDelay > 0) entry.venuesWithPartialDelay += 1;
+      if (fullDelay > 0) entry.venuesWithFullDelay += 1;
+      if (totalBatches > 0 && noDelay >= 0) entry.venuesWithNoDelayPercent += 1;
+      if (availableMp > 0 && usedMp >= 0) entry.venuesWithManpowerUtilizationPercent += 1;
+      if (ffa > 0) entry.venuesWithFfa += 1;
+      if (callLogs > 0) entry.venuesWithCallLogs += 1;
       if (row.status === "ACTIVE") entry.activeCount += 1;
       else if (row.status === "INACTIVE") entry.inactiveCount += 1;
       if (row.isBlacklisted) entry.blacklistedCount += 1;
@@ -1320,6 +1351,17 @@ export default function Dashboard() {
           fullDelay: toNumber(row.fullDelay),
           ffa: toNumber(row.ffa),
           callLogs: toNumber(row.callLogs),
+          venuesWithSeatCapacity: toNumber(row.venueMaxCapacity) > 0 ? 1 : 0,
+          venuesWithAvailableManpower: toNumber(row.manpowerAvailable) > 0 ? 1 : 0,
+          venuesWithUsedManpower: toNumber(row.manpowerUsed) > 0 ? 1 : 0,
+          venuesWithTotalBatches: toNumber(row.totalBatches) > 0 ? 1 : 0,
+          venuesWithNoDelay: toNumber(row.noDelay) > 0 ? 1 : 0,
+          venuesWithPartialDelay: toNumber(row.partialDelay) > 0 ? 1 : 0,
+          venuesWithFullDelay: toNumber(row.fullDelay) > 0 ? 1 : 0,
+          venuesWithNoDelayPercent: toNumber(row.totalBatches) > 0 ? 1 : 0,
+          venuesWithManpowerUtilizationPercent: toNumber(row.manpowerAvailable) > 0 ? 1 : 0,
+          venuesWithFfa: toNumber(row.ffa) > 0 ? 1 : 0,
+          venuesWithCallLogs: toNumber(row.callLogs) > 0 ? 1 : 0,
           activeCount: row.status === "ACTIVE" ? 1 : 0,
           inactiveCount: row.status === "INACTIVE" ? 1 : 0,
           blacklistedCount: row.isBlacklisted ? 1 : 0,
@@ -1393,6 +1435,25 @@ export default function Dashboard() {
     if (metricKey === "blacklistedCount") return toNumber(row.blacklistedCount);
     return 0;
   }, []);
+
+  const getComparisonTableMetricValue = useCallback((row, metricKey) => {
+    if (metricKey !== "totalCentreCount") {
+      return getAggregateComparisonMetricValue(row, metricKey);
+    }
+    if (activeComparisonMetric === "totalCentreCount") return toNumber(row.totalCount);
+    if (activeComparisonMetric === "totalSeatCapacity") return toNumber(row.venuesWithSeatCapacity);
+    if (activeComparisonMetric === "availableManpower") return toNumber(row.venuesWithAvailableManpower);
+    if (activeComparisonMetric === "usedManpower") return toNumber(row.venuesWithUsedManpower);
+    if (activeComparisonMetric === "totalBatches") return toNumber(row.venuesWithTotalBatches);
+    if (activeComparisonMetric === "noDelay") return toNumber(row.venuesWithNoDelay);
+    if (activeComparisonMetric === "partialDelay") return toNumber(row.venuesWithPartialDelay);
+    if (activeComparisonMetric === "fullDelay") return toNumber(row.venuesWithFullDelay);
+    if (activeComparisonMetric === "noDelayPercent") return toNumber(row.venuesWithNoDelayPercent);
+    if (activeComparisonMetric === "manpowerUtilizationPercent") return toNumber(row.venuesWithManpowerUtilizationPercent);
+    if (activeComparisonMetric === "ffa") return toNumber(row.venuesWithFfa);
+    if (activeComparisonMetric === "callLogs") return toNumber(row.venuesWithCallLogs);
+    return toNumber(row.totalCount);
+  }, [activeComparisonMetric, getAggregateComparisonMetricValue]);
 
   const manpowerDrillChartData = useMemo(() => {
     const source =
@@ -2926,7 +2987,7 @@ export default function Dashboard() {
                             <td>{renderClickable(row.name, () => handleComparisonDrillTableRowClick(row))}</td>
                             {COMPARISON_METRIC_OPTIONS.map((metric) => (
                               <td key={`cmp-table-cell-${manpowerDrillLevel}-${row.name}-${metric.key}`}>
-                                {formatComparisonMetricValue(metric.key, getAggregateComparisonMetricValue(row, metric.key))}
+                                {formatComparisonMetricValue(metric.key, getComparisonTableMetricValue(row, metric.key))}
                               </td>
                             ))}
                           </tr>
