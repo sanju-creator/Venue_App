@@ -486,6 +486,11 @@ export default function Dashboard() {
   const venuePerspectiveRef = useRef(null);
   const venueSearchRef = useRef(null);
   const venueSearchInputRef = useRef(null);
+  const comparisonMetricSelectRef = useRef(null);
+
+  const closeComparisonMetricDropdown = useCallback(() => {
+    comparisonMetricSelectRef.current?.blur();
+  }, []);
 
   useEffect(() => {
     if (!isVenueSearchOpen) return;
@@ -2729,6 +2734,7 @@ export default function Dashboard() {
                   disabled={isVenueTypeOnlyMode}
                   onClick={() => {
                     if (isVenueTypeOnlyMode) return;
+                    closeComparisonMetricDropdown();
                     setComparisonView(option.key);
                   }}
                 >
@@ -2741,6 +2747,7 @@ export default function Dashboard() {
                     key={`header-${option.key}`}
                     className={`dataset-pill ${comparisonTypeFilter === option.key ? "active" : ""}`}
                     onClick={() => {
+                      closeComparisonMetricDropdown();
                       setComparisonTypeFilter(option.key);
                       if (option.key === "DATC" || option.key === "DOTC") {
                         setSelectedComparisonMetric("totalCentreCount");
@@ -2764,6 +2771,7 @@ export default function Dashboard() {
             <div className="comparison-metric-select-wrap">
               <label htmlFor="comparison-metric-select">Compare By</label>
               <select
+                ref={comparisonMetricSelectRef}
                 id="comparison-metric-select"
                 className="comparison-metric-select"
                 value={activeComparisonMetric}
@@ -2794,6 +2802,7 @@ export default function Dashboard() {
                   <button
                     className="btn-outline btn-outline--small"
                     onClick={() => {
+                      closeComparisonMetricDropdown();
                       setComparisonRegion("");
                       setComparisonState("");
                       setComparisonCity("");
