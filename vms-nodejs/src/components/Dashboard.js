@@ -1351,23 +1351,37 @@ export default function Dashboard() {
     return selected?.label || comparisonTypeFilter;
   }, [comparisonTypeFilter]);
 
+  const isVenueTypeOnlyMode = useMemo(
+    () => comparisonTypeFilter === "DATC" || comparisonTypeFilter === "DOTC",
+    [comparisonTypeFilter],
+  );
+
+  const effectiveComparisonView = useMemo(
+    () => (isVenueTypeOnlyMode ? "venue" : comparisonView),
+    [isVenueTypeOnlyMode, comparisonView],
+  );
+
   const activeComparisonViewLabel = useMemo(() => {
-    const selected = COMPARISON_VIEW_OPTIONS.find((option) => option.key === comparisonView);
+    const selected = COMPARISON_VIEW_OPTIONS.find((option) => option.key === effectiveComparisonView);
     return selected?.label || "";
-  }, [comparisonView]);
+  }, [effectiveComparisonView]);
 
   const comparisonMetricOptions = useMemo(() => {
-    if (!comparisonView) return [];
-    return COMPARISON_METRIC_OPTIONS_BY_VIEW[comparisonView] || [];
-  }, [comparisonView]);
+    if (!effectiveComparisonView) return [];
+    if (isVenueTypeOnlyMode) {
+      return [{ key: "totalCentreCount", label: "Venue Count" }];
+    }
+    return COMPARISON_METRIC_OPTIONS_BY_VIEW[effectiveComparisonView] || [];
+  }, [effectiveComparisonView, isVenueTypeOnlyMode]);
 
   const activeComparisonMetric = useMemo(() => {
+    if (isVenueTypeOnlyMode) return "totalCentreCount";
     if (!comparisonMetricOptions.length) return "";
     if (selectedComparisonMetric && comparisonMetricOptions.some((option) => option.key === selectedComparisonMetric)) {
       return selectedComparisonMetric;
     }
     return comparisonMetricOptions[0]?.key || "";
-  }, [comparisonMetricOptions, selectedComparisonMetric]);
+  }, [isVenueTypeOnlyMode, comparisonMetricOptions, selectedComparisonMetric]);
 
   const selectedComparisonMetricLabel = useMemo(() => {
     const selected = comparisonMetricOptions.find((option) => option.key === activeComparisonMetric);
@@ -2703,7 +2717,7 @@ export default function Dashboard() {
             <div className="comparison-ribbon-left">
               <h2>
                 Comparison Analytics
-                {comparisonView ? ` - ${activeComparisonViewLabel} (${comparisonTypeLabel})` : ""}
+                {effectiveComparisonView ? ` - ${activeComparisonViewLabel} (${comparisonTypeLabel})` : ""}
               </h2>
               <p>Choose module from right. Section opens only after selection.</p>
             </div>
@@ -2711,8 +2725,12 @@ export default function Dashboard() {
               {COMPARISON_VIEW_OPTIONS.map((option) => (
                 <button
                   key={option.key}
-                  className={`comparison-view-btn ${comparisonView === option.key ? "active" : ""}`}
-                  onClick={() => setComparisonView(option.key)}
+                  className={`comparison-view-btn ${effectiveComparisonView === option.key ? "active" : ""}`}
+                  disabled={isVenueTypeOnlyMode && option.key !== "venue"}
+                  onClick={() => {
+                    if (isVenueTypeOnlyMode && option.key !== "venue") return;
+                    setComparisonView(option.key);
+                  }}
                 >
                   {option.label}
                 </button>
@@ -2724,11 +2742,16 @@ export default function Dashboard() {
                     className={`dataset-pill ${comparisonTypeFilter === option.key ? "active" : ""}`}
                     onClick={() => {
                       setComparisonTypeFilter(option.key);
+                      if (option.key === "DATC" || option.key === "DOTC") {
+                        setComparisonView("venue");
+                        setSelectedComparisonMetric("totalCentreCount");
+                      } else {
+                        setSelectedComparisonMetric("");
+                      }
                       setComparisonRegion("");
                       setComparisonState("");
                       setComparisonCity("");
                       setComparisonDistrict("");
-                      setSelectedComparisonMetric("");
                     }}
                   >
                     {option.label}
@@ -2746,9 +2769,9 @@ export default function Dashboard() {
                 className="comparison-metric-select"
                 value={activeComparisonMetric}
                 onChange={(event) => setSelectedComparisonMetric(event.target.value)}
-                disabled={!comparisonMetricOptions.length}
+                disabled={!comparisonMetricOptions.length || isVenueTypeOnlyMode}
               >
-                {!comparisonView ? <option value="">Select module first</option> : null}
+                {!effectiveComparisonView ? <option value="">Select module first</option> : null}
                 {comparisonMetricOptions.map((option) => (
                   <option key={`metric-${option.key}`} value={option.key}>
                     {option.label}
@@ -2756,7 +2779,7 @@ export default function Dashboard() {
                 ))}
               </select>
             </div>
-            {activeComparisonMetric && comparisonView ? (
+            {activeComparisonMetric && effectiveComparisonView ? (
               <div className="comparison-metric-total">
                 <span>{selectedComparisonMetricLabel}</span>
                 <strong>{selectedComparisonMetricTotal}</strong>
@@ -2764,7 +2787,7 @@ export default function Dashboard() {
             ) : null}
           </div>
 
-          {comparisonView ? (
+          {effectiveComparisonView ? (
             <div className="comparison-expand-panel">
               <div className="comparison-drilldown-path">
                 <span>Flow: Region -&gt; State -&gt; City -&gt; District</span>
@@ -2794,7 +2817,7 @@ export default function Dashboard() {
                 <div className="operational-panel comparison-panel--full">
                   <div className="chart-title">{manpowerDrillChartTitle}</div>
                   <ResponsiveContainer width="100%" height={280}>
-                    <BarChart key={`comparison-drill-${comparisonView}-${manpowerDrillLevel}-${activeComparisonMetric}`} data={manpowerDrillChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
+                    <BarChart key={`comparison-drill-${effectiveComparisonView}-${manpowerDrillLevel}-${activeComparisonMetric}`} data={manpowerDrillChartData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
                       <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: manpowerDrillLevel === "region" ? 12 : 10 }} />
                       <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
