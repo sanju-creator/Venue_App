@@ -2903,7 +2903,14 @@ export default function Dashboard() {
                       <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: manpowerDrillLevel === "region" ? 12 : 10 }} />
                       <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
                       <RechartsTooltip formatter={(value) => formatComparisonMetricValue(activeComparisonMetric, value)} />
-                      <Bar dataKey="value" name={selectedComparisonMetricLabel} fill="#3f7fdd" minPointSize={5} onClick={handleManpowerDrillBarClick} />
+                      <Bar dataKey="value" name={selectedComparisonMetricLabel} fill="#3f7fdd" minPointSize={5} onClick={handleManpowerDrillBarClick}>
+                        <LabelList
+                          dataKey="value"
+                          position="top"
+                          style={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                          formatter={(val) => toNumber(val) > 0 ? formatComparisonMetricValue(activeComparisonMetric, val) : ""}
+                        />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
