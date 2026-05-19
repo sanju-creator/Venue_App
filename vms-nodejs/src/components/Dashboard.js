@@ -2717,7 +2717,11 @@ export default function Dashboard() {
             <div className="comparison-ribbon-left">
               <h2>
                 Comparison Analytics
-                {effectiveComparisonView ? ` - ${activeComparisonViewLabel} (${comparisonTypeLabel})` : ""}
+                {isVenueTypeOnlyMode
+                  ? ` - ${comparisonTypeLabel}`
+                  : effectiveComparisonView
+                    ? ` - ${activeComparisonViewLabel} (${comparisonTypeLabel})`
+                    : ""}
               </h2>
               <p>Choose module from right. Section opens only after selection.</p>
             </div>
@@ -2725,10 +2729,10 @@ export default function Dashboard() {
               {COMPARISON_VIEW_OPTIONS.map((option) => (
                 <button
                   key={option.key}
-                  className={`comparison-view-btn ${effectiveComparisonView === option.key ? "active" : ""}`}
-                  disabled={isVenueTypeOnlyMode && option.key !== "venue"}
+                  className={`comparison-view-btn ${!isVenueTypeOnlyMode && comparisonView === option.key ? "active" : ""}`}
+                  disabled={isVenueTypeOnlyMode}
                   onClick={() => {
-                    if (isVenueTypeOnlyMode && option.key !== "venue") return;
+                    if (isVenueTypeOnlyMode) return;
                     setComparisonView(option.key);
                   }}
                 >
@@ -2743,7 +2747,6 @@ export default function Dashboard() {
                     onClick={() => {
                       setComparisonTypeFilter(option.key);
                       if (option.key === "DATC" || option.key === "DOTC") {
-                        setComparisonView("venue");
                         setSelectedComparisonMetric("totalCentreCount");
                       } else {
                         setSelectedComparisonMetric("");
@@ -2803,7 +2806,7 @@ export default function Dashboard() {
                   >
                     Reset Drilldown
                   </button>
-                  <span className="comparison-chip">View: {activeComparisonViewLabel || "-"}</span>
+                  {!isVenueTypeOnlyMode ? <span className="comparison-chip">View: {activeComparisonViewLabel || "-"}</span> : null}
                   <span className="comparison-chip">Type: {comparisonTypeLabel}</span>
                   {comparisonRegion ? <span className="comparison-chip">Region: {comparisonRegion}</span> : null}
                   {comparisonState ? <span className="comparison-chip">State: {comparisonState}</span> : null}
