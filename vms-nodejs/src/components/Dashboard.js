@@ -468,7 +468,6 @@ export default function Dashboard() {
   const [comparisonRegion, setComparisonRegion] = useState("");
   const [comparisonState, setComparisonState] = useState("");
   const [comparisonCity, setComparisonCity] = useState("");
-  const [comparisonDistrict, setComparisonDistrict] = useState("");
   const [selectedComparisonMetric, setSelectedComparisonMetric] = useState("");
   const venuePerspectiveRef = useRef(null);
   const venueSearchRef = useRef(null);
@@ -1169,7 +1168,6 @@ export default function Dashboard() {
       setComparisonRegion("");
       setComparisonState("");
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
     if (
@@ -1178,7 +1176,6 @@ export default function Dashboard() {
     ) {
       setComparisonState("");
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
   }, [comparisonRows, comparisonRegion, comparisonState]);
@@ -1187,7 +1184,6 @@ export default function Dashboard() {
     if (!comparisonRegion) {
       setComparisonState("");
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
     if (
@@ -1196,7 +1192,6 @@ export default function Dashboard() {
     ) {
       setComparisonState("");
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
     if (
@@ -1205,26 +1200,12 @@ export default function Dashboard() {
         (row) =>
           row.region === comparisonRegion &&
           row.state === comparisonState &&
-          (String(row.city || "").trim() || "-") === comparisonCity,
+          (String(row.examCityCentre || "").trim() || "-") === comparisonCity,
       )
     ) {
       setComparisonCity("");
-      setComparisonDistrict("");
-      return;
     }
-    if (
-      comparisonDistrict &&
-      !comparisonRows.some(
-        (row) =>
-          row.region === comparisonRegion &&
-          row.state === comparisonState &&
-          (String(row.city || "").trim() || "-") === comparisonCity &&
-          (String(row.district || "").trim() || "-") === comparisonDistrict,
-      )
-    ) {
-      setComparisonDistrict("");
-    }
-  }, [comparisonRows, comparisonRegion, comparisonState, comparisonCity, comparisonDistrict]);
+  }, [comparisonRows, comparisonRegion, comparisonState, comparisonCity]);
 
   const aggregateComparisonRows = useCallback((sourceRows, keyResolver) => {
     const map = new Map();
@@ -1306,33 +1287,49 @@ export default function Dashboard() {
     return comparisonStateScopedRows.filter((row) => row.state === comparisonState);
   }, [comparisonStateScopedRows, comparisonState]);
 
-  const comparisonCityLevelData = useMemo(
+  const comparisonCityCentreData = useMemo(
     () =>
       aggregateComparisonRows(
         comparisonCityScopedRows,
-        (row) => String(row.city || "").trim() || "-",
+        (row) => String(row.examCityCentre || "").trim() || "-",
       ),
     [comparisonCityScopedRows, aggregateComparisonRows],
   );
 
-  const comparisonDistrictScopedRows = useMemo(() => {
+  const comparisonVenueScopedRows = useMemo(() => {
     if (!comparisonCity) return [];
     return comparisonCityScopedRows.filter(
-      (row) => (String(row.city || "").trim() || "-") === comparisonCity,
+      (row) => (String(row.examCityCentre || "").trim() || "-") === comparisonCity,
     );
   }, [comparisonCityScopedRows, comparisonCity]);
 
-  const comparisonDistrictData = useMemo(
+  const comparisonVenueData = useMemo(
     () =>
-      aggregateComparisonRows(
-        comparisonDistrictScopedRows,
-        (row) => String(row.district || "").trim() || "-",
-      ),
-    [comparisonDistrictScopedRows, aggregateComparisonRows],
+      comparisonVenueScopedRows
+        .map((row, index) => ({
+          key: row.dmsCode || `${row.name || "venue"}-${index}`,
+          dmsCode: row.dmsCode,
+          name: row.name || row.dmsCode || "-",
+          totalCount: 1,
+          totalCapacity: toNumber(row.venueMaxCapacity),
+          availableManpower: toNumber(row.manpowerAvailable),
+          usedManpower: toNumber(row.manpowerUsed),
+          totalBatches: toNumber(row.totalBatches),
+          noDelay: toNumber(row.noDelay),
+          partialDelay: toNumber(row.partialDelay),
+          fullDelay: toNumber(row.fullDelay),
+          ffa: toNumber(row.ffa),
+          callLogs: toNumber(row.callLogs),
+          activeCount: row.status === "ACTIVE" ? 1 : 0,
+          inactiveCount: row.status === "INACTIVE" ? 1 : 0,
+          blacklistedCount: row.isBlacklisted ? 1 : 0,
+        }))
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "en", { sensitivity: "base" })),
+    [comparisonVenueScopedRows],
   );
 
   const manpowerDrillLevel = useMemo(() => {
-    if (comparisonCity) return "district";
+    if (comparisonCity) return "venue";
     if (comparisonState) return "city";
     if (comparisonRegion) return "state";
     return "region";
@@ -1402,9 +1399,9 @@ export default function Dashboard() {
       manpowerDrillLevel === "state"
         ? comparisonStateData
         : manpowerDrillLevel === "city"
-          ? comparisonCityLevelData
-          : manpowerDrillLevel === "district"
-            ? comparisonDistrictData
+          ? comparisonCityCentreData
+          : manpowerDrillLevel === "venue"
+            ? comparisonVenueData
             : comparisonRegionData;
     return source
       .map((row) => ({
@@ -1416,8 +1413,8 @@ export default function Dashboard() {
     manpowerDrillLevel,
     comparisonRegionData,
     comparisonStateData,
-    comparisonCityLevelData,
-    comparisonDistrictData,
+    comparisonCityCentreData,
+    comparisonVenueData,
     getAggregateComparisonMetricValue,
     activeComparisonMetric,
   ]);
@@ -1427,9 +1424,9 @@ export default function Dashboard() {
       manpowerDrillLevel === "state"
         ? `State-wise (${comparisonRegion})`
         : manpowerDrillLevel === "city"
-          ? `City-wise (${comparisonState})`
-          : manpowerDrillLevel === "district"
-            ? `District-wise (${comparisonCity})`
+          ? `City Centre-wise (${comparisonState})`
+          : manpowerDrillLevel === "venue"
+            ? `Venue-wise (${comparisonCity})`
             : "Region-wise";
     return `${levelLabel} ${selectedComparisonMetricLabel} | ${activeComparisonViewLabel} | ${comparisonTypeLabel}`;
   }, [
@@ -1444,31 +1441,36 @@ export default function Dashboard() {
 
   const handleManpowerDrillBarClick = useCallback((entry) => {
     const bucketName = entry?.payload?.name;
+    const venueCode = entry?.payload?.dmsCode;
     if (!bucketName) return;
 
     if (manpowerDrillLevel === "region") {
       setComparisonRegion((prev) => (prev === bucketName ? "" : bucketName));
       setComparisonState("");
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
 
     if (manpowerDrillLevel === "state") {
       setComparisonState((prev) => (prev === bucketName ? "" : bucketName));
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
 
     if (manpowerDrillLevel === "city") {
       setComparisonCity((prev) => (prev === bucketName ? "" : bucketName));
-      setComparisonDistrict("");
       return;
     }
 
-    setComparisonDistrict((prev) => (prev === bucketName ? "" : bucketName));
-  }, [manpowerDrillLevel]);
+    if (venueCode) {
+      openVenueDetail(venueCode);
+      return;
+    }
+    const selectedVenue = comparisonVenueData.find((row) => row.name === bucketName);
+    if (selectedVenue?.dmsCode) {
+      openVenueDetail(selectedVenue.dmsCode);
+    }
+  }, [manpowerDrillLevel, comparisonVenueData, openVenueDetail]);
 
   const comparisonKpis = useMemo(() => {
     const totalCentreCount = comparisonRows.length;
@@ -1514,7 +1516,6 @@ export default function Dashboard() {
     setComparisonRegion("");
     setComparisonState("");
     setComparisonCity("");
-    setComparisonDistrict("");
     setSelectedComparisonMetric("");
   }, [comparisonView]);
 
@@ -1543,18 +1544,18 @@ export default function Dashboard() {
     }
     if (manpowerDrillLevel === "city") {
       return {
-        title: `City-wise ${selectedComparisonMetricLabel}`,
-        header: "City",
-        rows: comparisonCityLevelData,
+        title: `City Centre-wise ${selectedComparisonMetricLabel}`,
+        header: "City Centre",
+        rows: comparisonCityCentreData,
         emptyMessage: "No city data found for selected state.",
       };
     }
-    if (manpowerDrillLevel === "district") {
+    if (manpowerDrillLevel === "venue") {
       return {
-        title: `District-wise ${selectedComparisonMetricLabel}`,
-        header: "District",
-        rows: comparisonDistrictData,
-        emptyMessage: "No district data found for selected city.",
+        title: `Venue-wise ${selectedComparisonMetricLabel}`,
+        header: "Venue",
+        rows: comparisonVenueData,
+        emptyMessage: "No venue data found for selected city centre.",
       };
     }
     return {
@@ -1568,8 +1569,8 @@ export default function Dashboard() {
     selectedComparisonMetricLabel,
     comparisonRegionData,
     comparisonStateData,
-    comparisonCityLevelData,
-    comparisonDistrictData,
+    comparisonCityCentreData,
+    comparisonVenueData,
   ]);
 
   const comparisonDrillTableRows = useMemo(
@@ -1583,28 +1584,34 @@ export default function Dashboard() {
     [comparisonDrillTableConfig.rows, getAggregateComparisonMetricValue],
   );
 
-  const handleComparisonDrillTableRowClick = useCallback((bucketName) => {
+  const handleComparisonDrillTableRowClick = useCallback((rowData) => {
+    const bucketName = typeof rowData === "string" ? rowData : rowData?.name;
+    const venueCode = typeof rowData === "object" ? rowData?.dmsCode : undefined;
     if (!bucketName) return;
     if (manpowerDrillLevel === "region") {
       setComparisonRegion((prev) => (prev === bucketName ? "" : bucketName));
       setComparisonState("");
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
     if (manpowerDrillLevel === "state") {
       setComparisonState((prev) => (prev === bucketName ? "" : bucketName));
       setComparisonCity("");
-      setComparisonDistrict("");
       return;
     }
     if (manpowerDrillLevel === "city") {
       setComparisonCity((prev) => (prev === bucketName ? "" : bucketName));
-      setComparisonDistrict("");
       return;
     }
-    setComparisonDistrict((prev) => (prev === bucketName ? "" : bucketName));
-  }, [manpowerDrillLevel]);
+    if (venueCode) {
+      openVenueDetail(venueCode);
+      return;
+    }
+    const selectedVenue = comparisonVenueData.find((row) => row.name === bucketName);
+    if (selectedVenue?.dmsCode) {
+      openVenueDetail(selectedVenue.dmsCode);
+    }
+  }, [manpowerDrillLevel, comparisonVenueData, openVenueDetail]);
 
   const manpowerRegionComparisonData = useMemo(() => {
     const sourceRows = Array.isArray(manpowerSnapshot?.manpowerWiseSummary)
@@ -2820,7 +2827,6 @@ export default function Dashboard() {
                       setComparisonRegion("");
                       setComparisonState("");
                       setComparisonCity("");
-                      setComparisonDistrict("");
                     }}
                   >
                     {option.label}
@@ -2860,7 +2866,7 @@ export default function Dashboard() {
           {effectiveComparisonView ? (
             <div className="comparison-expand-panel">
               <div className="comparison-drilldown-path">
-                <span>Flow: Region -&gt; State -&gt; City -&gt; District</span>
+                <span>Flow: Region -&gt; State -&gt; City Centre -&gt; Venue</span>
                 <div className="comparison-drilldown-actions">
                   <button
                     className="btn-outline btn-outline--small"
@@ -2869,7 +2875,6 @@ export default function Dashboard() {
                       setComparisonRegion("");
                       setComparisonState("");
                       setComparisonCity("");
-                      setComparisonDistrict("");
                     }}
                   >
                     Reset Drilldown
@@ -2878,8 +2883,7 @@ export default function Dashboard() {
                   <span className="comparison-chip">Type: {comparisonTypeLabel}</span>
                   {comparisonRegion ? <span className="comparison-chip">Region: {comparisonRegion}</span> : null}
                   {comparisonState ? <span className="comparison-chip">State: {comparisonState}</span> : null}
-                  {comparisonCity ? <span className="comparison-chip">City: {comparisonCity}</span> : null}
-                  {comparisonDistrict ? <span className="comparison-chip">District: {comparisonDistrict}</span> : null}
+                  {comparisonCity ? <span className="comparison-chip">City Centre: {comparisonCity}</span> : null}
                   {selectedComparisonMetricLabel ? <span className="comparison-chip">Metric: {selectedComparisonMetricLabel}</span> : null}
                 </div>
               </div>
@@ -2922,7 +2926,7 @@ export default function Dashboard() {
                       {comparisonDrillTableRows.length ? (
                         comparisonDrillTableRows.map((row) => (
                           <tr key={`cmp-drill-row-${manpowerDrillLevel}-${row.name}`}>
-                            <td>{renderClickable(row.name, () => handleComparisonDrillTableRowClick(row.name))}</td>
+                            <td>{renderClickable(row.name, () => handleComparisonDrillTableRowClick(row))}</td>
                             {COMPARISON_METRIC_OPTIONS.map((metric) => (
                               <td key={`cmp-table-cell-${manpowerDrillLevel}-${row.name}-${metric.key}`}>
                                 {formatComparisonMetricValue(metric.key, getAggregateComparisonMetricValue(row, metric.key))}
