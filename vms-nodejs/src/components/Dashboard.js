@@ -684,11 +684,11 @@ export default function Dashboard() {
     if (!selectedFilters) return [];
 
     return rows.filter((row) => {
-      if (selectedFilters.venueType && !selectedFilters.venueType.includes(row.venueType)) return false;
-      if (!selectedFilters.region.includes(row.region)) return false;
-      if (!selectedFilters.state.includes(row.state)) return false;
-      if (selectedFilters.examCityCentre && !selectedFilters.examCityCentre.includes(buildExamCityCentre(row))) return false;
-      if (!selectedFilters.category.includes(row.category)) return false;
+      if (selectedFilters.venueType?.length && !selectedFilters.venueType.includes(row.venueType)) return false;
+      if (selectedFilters.region?.length && !selectedFilters.region.includes(row.region)) return false;
+      if (selectedFilters.state?.length && !selectedFilters.state.includes(row.state)) return false;
+      if (selectedFilters.examCityCentre?.length && !selectedFilters.examCityCentre.includes(buildExamCityCentre(row))) return false;
+      if (selectedFilters.category?.length && !selectedFilters.category.includes(row.category)) return false;
       if (selectedFilters.projectName?.length && !selectedFilters.projectName.includes(row.projectName)) return false;
       return true;
     });
@@ -822,7 +822,9 @@ export default function Dashboard() {
 
   const filteredRows = useMemo(() => {
     if (!selectedFilters) return [];
-    return rowsWithoutStatusFilter.filter((row) => selectedFilters.status.includes(row.status));
+    return rowsWithoutStatusFilter.filter((row) =>
+      selectedFilters.status?.length ? selectedFilters.status.includes(row.status) : true,
+    );
   }, [rowsWithoutStatusFilter, selectedFilters]);
 
   const inactiveRows = useMemo(
