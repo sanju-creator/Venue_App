@@ -469,6 +469,7 @@ export default function Dashboard() {
   const [comparisonState, setComparisonState] = useState("");
   const [comparisonCity, setComparisonCity] = useState("");
   const [selectedComparisonMetric, setSelectedComparisonMetric] = useState("");
+  const [isComparisonCollapsed, setIsComparisonCollapsed] = useState(false);
   const venuePerspectiveRef = useRef(null);
   const venueSearchRef = useRef(null);
   const venueSearchInputRef = useRef(null);
@@ -2841,6 +2842,102 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div className="section-full section-full--operational operational-shell">
+          <div className="operational-shell-head">
+            <h2>Operational Distribution (DOTC vs DATC)</h2>
+            <p>Detailed geographic breakdown of venue classifications</p>
+          </div>
+          <h3>Region-Wise Distribution</h3>
+          <div className="col-2-grid operational-grid">
+            <div className="operational-panel">
+              <div className="chart-title">Venue Count Distribution</div>
+              <div className="chart-legend-row">
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DATC }} />
+                  DATC
+                </span>
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DOTC }} />
+                  DOTC
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={distributionCountData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
+                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <RechartsTooltip formatter={(value) => formatCount(value)} />
+                  <Bar
+                    dataKey="DATC"
+                    fill={OPERATIONAL_COLORS.DATC}
+                    stroke={OPERATIONAL_STROKES.DATC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.95}
+                    minPointSize={5}
+                    radius={[6, 6, 0, 0]}
+                  >
+                    <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
+                  </Bar>
+                  <Bar
+                    dataKey="DOTC"
+                    fill={OPERATIONAL_COLORS.DOTC}
+                    stroke={OPERATIONAL_STROKES.DOTC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.96}
+                    minPointSize={10}
+                    radius={[6, 6, 0, 0]}
+                  >
+                    <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="operational-panel">
+              <div className="chart-title">Total Seat Capacity</div>
+              <div className="chart-legend-row">
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DATC }} />
+                  DATC
+                </span>
+                <span className="chart-legend-item">
+                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DOTC }} />
+                  DOTC
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={distributionCapacityData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
+                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <RechartsTooltip formatter={(value) => formatCount(value)} />
+                  <Bar
+                    dataKey="DATC"
+                    fill={OPERATIONAL_COLORS.DATC}
+                    stroke={OPERATIONAL_STROKES.DATC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.95}
+                    minPointSize={5}
+                    radius={[6, 6, 0, 0]}
+                  >
+                    <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
+                  </Bar>
+                  <Bar
+                    dataKey="DOTC"
+                    fill={OPERATIONAL_COLORS.DOTC}
+                    stroke={OPERATIONAL_STROKES.DOTC}
+                    strokeWidth={1.1}
+                    fillOpacity={0.96}
+                    minPointSize={10}
+                    radius={[6, 6, 0, 0]}
+                  >
+                    <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
         <div className="section-full comparison-analytics-shell">
           <div className="comparison-ribbon">
             <div className="comparison-ribbon-left">
@@ -2891,9 +2988,17 @@ export default function Dashboard() {
                   </button>
                 ))}
               </div>
+              <button
+                className={`comparison-view-btn ${isComparisonCollapsed ? "" : "active"}`}
+                onClick={() => setIsComparisonCollapsed((prev) => !prev)}
+              >
+                {isComparisonCollapsed ? "Expand" : "Collapse"}
+              </button>
             </div>
           </div>
 
+          {!isComparisonCollapsed ? (
+          <>
           <div className="comparison-metric-toolbar">
             <div className="comparison-metric-select-wrap">
               <label htmlFor="comparison-metric-select">Compare By</label>
@@ -3003,103 +3108,10 @@ export default function Dashboard() {
               </div>
             </div>
           ) : null}
+          </>
+          ) : null}
         </div>
 
-        <div className="section-full section-full--operational operational-shell">
-          <div className="operational-shell-head">
-            <h2>Operational Distribution (DOTC vs DATC)</h2>
-            <p>Detailed geographic breakdown of venue classifications</p>
-          </div>
-          <h3>Region-Wise Distribution</h3>
-          <div className="col-2-grid operational-grid">
-            <div className="operational-panel">
-              <div className="chart-title">Venue Count Distribution</div>
-              <div className="chart-legend-row">
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DATC }} />
-                  DATC
-                </span>
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DOTC }} />
-                  DOTC
-                </span>
-              </div>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={distributionCountData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Bar
-                    dataKey="DATC"
-                    fill={OPERATIONAL_COLORS.DATC}
-                    stroke={OPERATIONAL_STROKES.DATC}
-                    strokeWidth={1.1}
-                    fillOpacity={0.95}
-                    minPointSize={5}
-                    radius={[6, 6, 0, 0]}
-                  >
-                    <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
-                  </Bar>
-                  <Bar
-                    dataKey="DOTC"
-                    fill={OPERATIONAL_COLORS.DOTC}
-                    stroke={OPERATIONAL_STROKES.DOTC}
-                    strokeWidth={1.1}
-                    fillOpacity={0.96}
-                    minPointSize={10}
-                    radius={[6, 6, 0, 0]}
-                  >
-                    <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="operational-panel">
-              <div className="chart-title">Total Seat Capacity</div>
-              <div className="chart-legend-row">
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DATC }} />
-                  DATC
-                </span>
-                <span className="chart-legend-item">
-                  <span className="chart-legend-swatch" style={{ background: OPERATIONAL_COLORS.DOTC }} />
-                  DOTC
-                </span>
-              </div>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={distributionCapacityData} margin={{ top: 8, right: 8, left: -4, bottom: 2 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dde6ef" />
-                  <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                  <RechartsTooltip formatter={(value) => formatCount(value)} />
-                  <Bar
-                    dataKey="DATC"
-                    fill={OPERATIONAL_COLORS.DATC}
-                    stroke={OPERATIONAL_STROKES.DATC}
-                    strokeWidth={1.1}
-                    fillOpacity={0.95}
-                    minPointSize={5}
-                    radius={[6, 6, 0, 0]}
-                  >
-                    <LabelList dataKey="DATC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
-                  </Bar>
-                  <Bar
-                    dataKey="DOTC"
-                    fill={OPERATIONAL_COLORS.DOTC}
-                    stroke={OPERATIONAL_STROKES.DOTC}
-                    strokeWidth={1.1}
-                    fillOpacity={0.96}
-                    minPointSize={10}
-                    radius={[6, 6, 0, 0]}
-                  >
-                    <LabelList dataKey="DOTC" position="top" style={{ fontSize: 11, fill: "#64748b" }} formatter={(val) => val > 0 ? formatCount(val) : ""} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
 
         <div className="section-full">
           <h3 className="summary-subtitle">Data Summary Table</h3>
@@ -3156,6 +3168,7 @@ export default function Dashboard() {
     </div>
   );
 }
+
 
 
 
