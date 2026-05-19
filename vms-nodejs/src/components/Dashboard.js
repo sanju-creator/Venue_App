@@ -1575,9 +1575,12 @@ export default function Dashboard() {
   const comparisonDrillTableRows = useMemo(
     () =>
       comparisonDrillTableConfig.rows.filter(
-        (row) => toNumber(getAggregateComparisonMetricValue(row, activeComparisonMetric)) > 0,
+        (row) =>
+          COMPARISON_METRIC_OPTIONS.some(
+            (metric) => toNumber(getAggregateComparisonMetricValue(row, metric.key)) > 0,
+          ),
       ),
-    [comparisonDrillTableConfig.rows, getAggregateComparisonMetricValue, activeComparisonMetric],
+    [comparisonDrillTableConfig.rows, getAggregateComparisonMetricValue],
   );
 
   const handleComparisonDrillTableRowClick = useCallback((bucketName) => {
@@ -2910,7 +2913,9 @@ export default function Dashboard() {
                     <thead>
                       <tr>
                         <th>{comparisonDrillTableConfig.header}</th>
-                        <th>{selectedComparisonMetricLabel}</th>
+                        {COMPARISON_METRIC_OPTIONS.map((metric) => (
+                          <th key={`cmp-table-head-${metric.key}`}>{metric.label}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
@@ -2918,12 +2923,16 @@ export default function Dashboard() {
                         comparisonDrillTableRows.map((row) => (
                           <tr key={`cmp-drill-row-${manpowerDrillLevel}-${row.name}`}>
                             <td>{renderClickable(row.name, () => handleComparisonDrillTableRowClick(row.name))}</td>
-                            <td>{formatComparisonMetricValue(activeComparisonMetric, getAggregateComparisonMetricValue(row, activeComparisonMetric))}</td>
+                            {COMPARISON_METRIC_OPTIONS.map((metric) => (
+                              <td key={`cmp-table-cell-${manpowerDrillLevel}-${row.name}-${metric.key}`}>
+                                {formatComparisonMetricValue(metric.key, getAggregateComparisonMetricValue(row, metric.key))}
+                              </td>
+                            ))}
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={2}>{comparisonDrillTableConfig.emptyMessage}</td>
+                          <td colSpan={COMPARISON_METRIC_OPTIONS.length + 1}>{comparisonDrillTableConfig.emptyMessage}</td>
                         </tr>
                       )}
                     </tbody>
