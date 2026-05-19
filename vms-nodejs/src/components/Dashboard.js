@@ -289,33 +289,20 @@ const DATC_DOTC_FILTER_OPTIONS = [
   { key: "DATC", label: "DATC" },
   { key: "DOTC", label: "DOTC" },
 ];
-const COMPARISON_METRIC_OPTIONS_BY_VIEW = {
-  manpower: [
-    { key: "availableManpower", label: "Available Manpower" },
-    { key: "usedManpower", label: "Used Manpower" },
-    { key: "manpowerUtilizationPercent", label: "Manpower Utilization %" },
-    { key: "totalBatches", label: "Total Batches" },
-    { key: "noDelay", label: "No Delay" },
-    { key: "partialDelay", label: "Partial Delay" },
-    { key: "fullDelay", label: "Full Delay" },
-    { key: "noDelayPercent", label: "No Delay %" },
-  ],
-  venue: [
-    { key: "totalCentreCount", label: "Venue Count" },
-    { key: "totalSeatCapacity", label: "Seat Capacity" },
-    { key: "activeCount", label: "Active Venues" },
-    { key: "inactiveCount", label: "Inactive Venues" },
-    { key: "blacklistedCount", label: "Blacklisted Venues" },
-  ],
-  project: [
-    { key: "totalBatches", label: "Total Batches" },
-    { key: "noDelay", label: "No Delay" },
-    { key: "partialDelay", label: "Partial Delay" },
-    { key: "fullDelay", label: "Full Delay" },
-    { key: "ffa", label: "FFA" },
-    { key: "callLogs", label: "Call Logs" },
-  ],
-};
+const COMPARISON_METRIC_OPTIONS = [
+  { key: "totalBatches", label: "Total Batches" },
+  { key: "noDelay", label: "No Delay" },
+  { key: "partialDelay", label: "Partial Delay" },
+  { key: "fullDelay", label: "Full Delay" },
+  { key: "noDelayPercent", label: "No Delay %" },
+  { key: "availableManpower", label: "Available Manpower" },
+  { key: "usedManpower", label: "Used Manpower" },
+  { key: "manpowerUtilizationPercent", label: "Manpower Utilization %" },
+  { key: "totalCentreCount", label: "Venue Count" },
+  { key: "totalSeatCapacity", label: "Seat Capacity" },
+  { key: "ffa", label: "FFA" },
+  { key: "callLogs", label: "Call Logs" },
+];
 
 function sumBy(rows, getter) {
   return rows.reduce((sum, row) => sum + toNumber(getter(row)), 0);
@@ -1373,7 +1360,7 @@ export default function Dashboard() {
 
   const comparisonMetricOptions = useMemo(() => {
     if (!effectiveComparisonView) return [];
-    return COMPARISON_METRIC_OPTIONS_BY_VIEW[effectiveComparisonView] || [];
+    return COMPARISON_METRIC_OPTIONS;
   }, [effectiveComparisonView]);
 
   const activeComparisonMetric = useMemo(() => {
